@@ -57,6 +57,11 @@ class ModernBar(Flowable):
         if self.percentage >= 75: self.color = colors.HexColor("#27AE60")
         elif self.percentage >= 50: self.color = colors.HexColor("#F1C40F")
         else: self.color = colors.HexColor("#E74C3C")
+    
+    # LAYOUT ERROR ÇÖZÜMÜ İÇİN EKLENEN WRAP FONKSİYONU
+    def wrap(self, availWidth, availHeight):
+        return (self.width, self.height)
+        
     def draw(self):
         self.canv.setFillColor(colors.HexColor("#EAECEE"))
         self.canv.roundRect(0, 0, self.width, self.height, 3, fill=1, stroke=0)
@@ -92,21 +97,28 @@ def create_landscape_class_pdf(veri):
     kpi_df = veri['df_kpi']
     kpi_data = [[Paragraph("Metric", header_cell_style), Paragraph("Value", header_cell_style)]]
     for _, row in kpi_df.iterrows(): kpi_data.append([Paragraph(tr_to_eng(str(row['Metric'])), cell_style_left), Paragraph(str(row['Value']), cell_style)])
-    kpi_table = Table(kpi_data, colWidths=[130, 100])
+    kpi_table = Table(kpi_data, colWidths=[120, 100])
     kpi_table.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor("#2C3E50")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BOTTOMPADDING', (0,0), (-1,-1), 8), ('TOPPADDING', (0,0), (-1,-1), 8), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey), ('BACKGROUND', (0,1), (-1,-1), colors.HexColor("#F8F9F9"))]))
     
     skills_data = [[Paragraph("Section / Part", header_cell_style), Paragraph("Objectives", header_cell_style), Paragraph("Avg", header_cell_style), Paragraph("Max", header_cell_style), Paragraph("Performance", header_cell_style)]]
     for b_dict in veri['beceri_listesi']:
         bar = ModernBar(130, 10, b_dict['yuzde'])
         skills_data.append([Paragraph(tr_to_eng(b_dict['isim']), cell_style_left), Paragraph(tr_to_eng(b_dict.get('kazanim', '')), cell_style_left), Paragraph(f"{b_dict['ort']:.1f}", cell_style), Paragraph(str(b_dict['max']), cell_style), bar])
-    skill_table = Table(skills_data, colWidths=[120, 180, 40, 40, 152])
+    
+    # SÜTUN GENİŞLİKLERİ KÜÇÜLTÜLEREK SAYFAYA SIĞDIRILDI (TOPLAM 510)
+    skill_table = Table(skills_data, colWidths=[110, 180, 40, 40, 140])
     s_style = [('BACKGROUND', (0,0), (-1,0), colors.HexColor("#2C3E50")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey)]
     for i in range(1, len(skills_data)):
         if i % 2 == 0: s_style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor("#F8F9F9")))
     skill_table.setStyle(TableStyle(s_style))
     
-    kapsayici_tablo = Table([[kpi_table, skill_table]], colWidths=[250, 532])
-    kapsayici_tablo.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
+    # TAŞMA HATASI (LAYOUT ERROR) OLMAMASI İÇİN İÇ BOŞLUKLAR (PADDING) SIFIRLANDI
+    kapsayici_tablo = Table([[kpi_table, skill_table]], colWidths=[240, 542])
+    kapsayici_tablo.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('LEFTPADDING', (0,0), (-1,-1), 0),
+        ('RIGHTPADDING', (0,0), (-1,-1), 0)
+    ]))
     elements.extend([kapsayici_tablo, Spacer(1, 20)])
     
     df_liste = veri['df_liste'].copy()
@@ -163,7 +175,6 @@ def create_modern_pdf(rapor_verileri):
                 df_temp = df_tablo.copy()
                 df_temp.columns = [tr_to_eng(c) for c in df_temp.columns]
                 cols_count = len(df_temp.columns)
-                # Bireysel karnedeki 4 sütunlu tablonun genişlikleri özel ayarlandı
                 if cols_count == 4: col_widths = [100, 295, 70, 70]
                 else: col_widths = [535 / max(1, cols_count)] * cols_count
                 tablo_verisi = [[Paragraph(c, header_cell_style) for c in df_temp.columns]]
@@ -346,7 +357,7 @@ else:
             conn.close()
 
         # ----------------------------------------------------
-        # 3. KULLANICILAR & ATAMALAR (KARIŞMA HATASI GİDERİLDİ & ATAMA FORMU EKLENDİ)
+        # 3. KULLANICILAR & ATAMALAR 
         # ----------------------------------------------------
         if st.session_state['rol'] == "Admin":
             with tab_kullanici:
@@ -373,7 +384,6 @@ else:
                         duzenlenecek_kullanici = st.selectbox("Düzenlenecek Kullanıcı", df_kullanicilar['kullanici_adi'].tolist())
                         mevcut_bilgi = df_kullanicilar[df_kullanicilar['kullanici_adi'] == duzenlenecek_kullanici].iloc[0]
                         
-                        # Burada dinamik key kullanarak Streamlit'in eski kullanıcının verilerini hafızada tutmasını ve birbirine karışmasını engelliyoruz.
                         c_e1, c_e2 = st.columns(2)
                         with c_e1: 
                             edit_id = st.text_input("Kullanıcı Adı (ID)", value=mevcut_bilgi['kullanici_adi'], key=f"e_id_{duzenlenecek_kullanici}")
@@ -469,7 +479,6 @@ else:
             conn = get_db_connection()
             cur = conn.cursor()
             
-            # KONSOLİDE BAŞARI, MADDE AYIRT EDİCİLİK VE GÜVENİRLİK AYNI KALIR
             if rapor_kapsami == "🏆 Dönem Sonu Konsolide Başarı":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
                 acik_sinavlar = [r[0] for r in cur.fetchall()]
@@ -581,7 +590,7 @@ else:
                                         st.dataframe(df_cift[df_cift['Puan Farkı'] > 10].sort_values(by="Puan Farkı", ascending=False), use_container_width=True)
                                         st.divider()
             
-            # 4. BİREYSEL KARNELER (İNGİLİZCE & KAZANIMLI)
+            # 4. BİREYSEL KARNELER
             elif rapor_kapsami == "👤 Bireysel Karneler":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
                 sinavlar = [r[0] for r in cur.fetchall()]
@@ -633,7 +642,7 @@ else:
                                         st.success("PDF başarıyla oluşturuldu!")
                                         st.download_button("📥 PDF Olarak İndir", data=pdf_buf, file_name=f"{sec_ogr}_ReportCard.pdf", mime="application/pdf")
             
-            # 5. SINIF / ŞUBE RAPORU (İNGİLİZCE & KAZANIMLI)
+            # 5. SINIF / ŞUBE RAPORU
             elif rapor_kapsami == "🏫 Sınıf / Şube Raporu":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
                 sinavlar = [r[0] for r in cur.fetchall()]
@@ -714,14 +723,13 @@ else:
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ (SINAV İZOLASYONU EKLENDİ)
+    # 5. HOCA VERİ GİRİŞ PANELİ
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
         st.subheader("📝 Hızlı Veri Giriş Terminali")
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Sadece hocaya atanmış modülleri tespit et
         cur.execute("SELECT modul FROM hoca_atamalari WHERE kullanici_adi=%s", (st.session_state['kullanici_adi'],))
         hocanin_modulleri = set([r[0] for r in cur.fetchall()])
         
@@ -729,7 +737,6 @@ else:
         sinav_data = cur.fetchall()
         if not sinav_data: st.warning("Sistemde açık sınav bulunmuyor."); st.stop()
         
-        # Hocanın göreceği sınavları filtrele (Sadece sorumlu olduğu modüllerin sınavlarını görür)
         acik_sinavlar = [row[0] for row in sinav_data if row[0].split("_")[0] in hocanin_modulleri]
         if not acik_sinavlar: 
             st.error("⚠️ Size tanımlanmış herhangi bir modüle ait aktif sınav bulunmamaktadır.")
