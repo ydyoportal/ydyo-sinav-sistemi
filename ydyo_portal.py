@@ -246,17 +246,17 @@ else:
                 
                 st.divider()
                 
-                # 2. SINAV DÜZENLEME MODÜLÜ (YENİ)
+                # 2. SINAV DÜZENLEME MODÜLÜ
                 st.markdown("### ✏️ Sınav Düzenle (Ayarlar ve ToS)")
                 st.info("Sınavı silmeden, mevcut tolerans ayarını veya Belirtke Tablosunu (ToS) güncelleyebilirsiniz. Uyarı: Eğer not girişi yapıldıysa ToS'taki sütun isimlerini (Ana Bölüm/Alt Bölüm) değiştirmek notların görüntülenmesinde sorun yaratabilir, sadece puan güncellemesi önerilir.")
                 
                 duzenlenecek_sinav = st.selectbox("Düzenlenecek Sınavı Seçin", df_sinav_durum['sinav_kodu'].tolist(), key="edit_exam_select")
                 
-                # Mevcut Toleransı Çek
+                # Mevcut Toleransı Çek (Buradaki hata düzeltildi)
                 cur = conn.cursor()
                 cur.execute("SELECT tolerans FROM sinav_ayarlari WHERE sinav_kodu=%s", (duzenlenecek_sinav,))
                 tol_res = cur.fetchone()
-                mevcut_tolerans = tol_res[0] if tol_res else 6
+                mevcut_tolerans = int(tol_res[0]) if (tol_res and tol_res[0] is not None) else 6
                 
                 yeni_tolerans = st.number_input("Güncel Çift Okuma Tolerans Farkı", min_value=0, value=mevcut_tolerans)
                 
@@ -276,9 +276,7 @@ else:
                 )
                 
                 if st.button("💾 Değişiklikleri Kaydet (Sınavı Güncelle)", type="primary"):
-                    # Toleransı güncelle
                     cur.execute("UPDATE sinav_ayarlari SET tolerans=%s WHERE sinav_kodu=%s", (yeni_tolerans, duzenlenecek_sinav))
-                    # Eski ToS'u sil ve yenisini yaz
                     cur.execute("DELETE FROM sinav_tos WHERE sinav_kodu=%s", (duzenlenecek_sinav,))
                     for _, row in guncel_tos.iterrows():
                         cur.execute("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan) VALUES (%s, %s, %s, %s, %s)", (duzenlenecek_sinav, row['Ana Bölüm'], row['Alt Bölüm (Part)'], row['Ölçülen Kazanımlar'], float(row['Max Puan'])))
@@ -350,7 +348,6 @@ else:
                             
                         if st.button("Kullanıcı Bilgilerini Güncelle"):
                             cur = conn.cursor()
-                            # ID değiştirilmişse FK (Atamalar) hatası almamak için önce atamaları güncelle
                             if edit_id != duzenlenecek_kullanici:
                                 cur.execute("SELECT kullanici_adi FROM kullanicilar WHERE kullanici_adi=%s", (edit_id,))
                                 if cur.fetchone():
@@ -361,7 +358,6 @@ else:
                             else:
                                 cur.execute("UPDATE kullanicilar SET rol=%s, isim=%s WHERE kullanici_adi=%s", (edit_rol, edit_isim, duzenlenecek_kullanici))
                             
-                            # Eğer şifre alanı boş bırakılmadıysa şifreyi de güncelle
                             if edit_pw:
                                 cur.execute("UPDATE kullanicilar SET sifre=%s WHERE kullanici_adi=%s", (hash_sifre(edit_pw), edit_id))
                                 
@@ -456,7 +452,6 @@ else:
                                         sonuclar.append(data)
                                     df_sonuc = pd.DataFrame(sonuclar).sort_values(by="Nihai Puan", ascending=False)
                                     
-                                    # PANDAS SÜRÜM UYUMU (map kullanımı)
                                     try: styled_df = df_sonuc.style.map(lambda x: 'background-color: #D5F5E3' if x=='BAŞARILI' else 'background-color: #FADBD8' if x=='BAŞARISIZ' else '', subset=['Durum'])
                                     except: styled_df = df_sonuc.style.applymap(lambda x: 'background-color: #D5F5E3' if x=='BAŞARILI' else 'background-color: #FADBD8' if x=='BAŞARISIZ' else '', subset=['Durum'])
                                     st.dataframe(styled_df, use_container_width=True, hide_index=True)
@@ -490,7 +485,6 @@ else:
                             
                             df_s = pd.DataFrame(sonuclar)
                             if not df_s.empty:
-                                # PANDAS 2.1+ UYUMU İÇİN APPLYMAP -> MAP DEĞİŞİKLİĞİ BURADA YAPILDI
                                 def renk_ver(val):
                                     if not isinstance(val, str): return ''
                                     if "Çok İyi" in val: return 'color: green; font-weight: bold;'
