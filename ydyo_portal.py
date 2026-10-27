@@ -42,7 +42,7 @@ def get_db_backup_excel():
     return buffer
 
 # ==========================================
-# PDF RAPORLAMA FONKSİYONLARI
+# PDF RAPORLAMA FONKSİYONLARI (MODERN BARLAR İLE)
 # ==========================================
 def tr_to_eng(text):
     if not isinstance(text, str): return str(text)
@@ -82,6 +82,58 @@ def build_pdf_doc(elements, is_landscape=False):
     buffer.seek(0)
     return buffer
 
+def create_landscape_class_pdf(veri):
+    elements = []
+    elements.append(Paragraph("KTO KARATAY UNIVERSITY", header_style))
+    elements.append(Paragraph("School of Foreign Languages | Testing Office", sub_header_style))
+    elements.append(Paragraph(tr_to_eng(veri['baslik']), title_style))
+    elements.append(Paragraph(tr_to_eng(veri['alt_baslik']), info_style))
+    
+    kpi_df = veri['df_kpi']
+    kpi_data = [[Paragraph("Metric", header_cell_style), Paragraph("Value", header_cell_style)]]
+    for _, row in kpi_df.iterrows(): kpi_data.append([Paragraph(tr_to_eng(str(row['Metric'])), cell_style_left), Paragraph(str(row['Value']), cell_style)])
+    kpi_table = Table(kpi_data, colWidths=[130, 100])
+    kpi_table.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor("#2C3E50")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BOTTOMPADDING', (0,0), (-1,-1), 8), ('TOPPADDING', (0,0), (-1,-1), 8), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey), ('BACKGROUND', (0,1), (-1,-1), colors.HexColor("#F8F9F9"))]))
+    
+    skills_data = [[Paragraph("Section / Part", header_cell_style), Paragraph("Avg", header_cell_style), Paragraph("Max", header_cell_style), Paragraph("Performance", header_cell_style)]]
+    for b_dict in veri['beceri_listesi']:
+        bar = ModernBar(140, 10, b_dict['yuzde'])
+        skills_data.append([Paragraph(tr_to_eng(b_dict['isim']), cell_style_left), Paragraph(f"{b_dict['ort']:.1f}", cell_style), Paragraph(str(b_dict['max']), cell_style), bar])
+    skill_table = Table(skills_data, colWidths=[200, 50, 50, 160])
+    s_style = [('BACKGROUND', (0,0), (-1,0), colors.HexColor("#2C3E50")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey)]
+    for i in range(1, len(skills_data)):
+        if i % 2 == 0: s_style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor("#F8F9F9")))
+    skill_table.setStyle(TableStyle(s_style))
+    
+    kapsayici_tablo = Table([[kpi_table, skill_table]], colWidths=[250, 532])
+    kapsayici_tablo.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP')]))
+    elements.extend([kapsayici_tablo, Spacer(1, 20)])
+    
+    df_liste = veri['df_liste'].copy()
+    elements.append(Paragraph("<b>Detailed Student List & Scores</b>", styles['Heading4']))
+    elements.append(Spacer(1, 5))
+    col_count = len(df_liste.columns)
+    base_widths = {'Student ID': 70, 'Name Surname': 160, 'Total Score': 60}
+    kalan_genislik = 782 - sum(base_widths.values())
+    skill_col_width = kalan_genislik / max(1, col_count - 3)
+    col_widths = [base_widths.get(c, skill_col_width) for c in df_liste.columns]
+    
+    tablo_verisi = [[Paragraph(c, header_cell_style) for c in df_liste.columns]]
+    for _, row in df_liste.iterrows():
+        row_data = []
+        for c_name in df_liste.columns:
+            c_text = tr_to_eng(str(row[c_name]))
+            c_style = cell_style_left if c_name == 'Name Surname' else cell_style
+            row_data.append(Paragraph(c_text, c_style))
+        tablo_verisi.append(row_data)
+    l_table = Table(tablo_verisi, colWidths=col_widths, repeatRows=1)
+    l_style = [('BACKGROUND', (0,0), (-1,0), colors.HexColor("#2C3E50")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey), ('BOTTOMPADDING', (0,0), (-1,0), 8), ('TOPPADDING', (0,0), (-1,0), 8)]
+    for i in range(1, len(tablo_verisi)):
+        if i % 2 == 0: l_style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor("#F8F9F9")))
+    l_table.setStyle(TableStyle(l_style))
+    elements.append(l_table)
+    return build_pdf_doc(elements, is_landscape=True)
+
 def create_modern_pdf(rapor_verileri):
     elements = []
     for idx, veri in enumerate(rapor_verileri):
@@ -89,6 +141,20 @@ def create_modern_pdf(rapor_verileri):
         elements.append(Paragraph("School of Foreign Languages | Testing Office", sub_header_style))
         elements.append(Paragraph(tr_to_eng(veri['baslik']), title_style))
         if veri.get('alt_baslik'): elements.append(Paragraph(tr_to_eng(veri['alt_baslik']), info_style))
+        
+        # Bireysel Bar Grafikleri
+        if veri.get('beceri_grafik_verisi'):
+            elements.append(Paragraph("<b>Skill Profile</b>", styles['Heading4']))
+            elements.append(Spacer(1, 5))
+            b_data = []
+            for b_name, b_val in veri['beceri_grafik_verisi'].items():
+                bar = ModernBar(120, 10, b_val)
+                b_data.append([Paragraph(tr_to_eng(b_name), cell_style_left), bar, Paragraph(f"%{b_val:.1f}", cell_style)])
+            if b_data:
+                b_table = Table(b_data, colWidths=[120, 130, 50])
+                b_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BOTTOMPADDING', (0,0), (-1,-1), 4), ('TOPPADDING', (0,0), (-1,-1), 4)]))
+                elements.extend([b_table, Spacer(1, 15)])
+                
         df_listesi = veri.get('df_list', [])
         for tablo_baslik, df_tablo in df_listesi:
             if not df_tablo.empty:
@@ -221,14 +287,13 @@ else:
                 cur.close(); conn.close()
 
         # ----------------------------------------------------
-        # 2. SINAV & VERİ YÖNETİMİ (KİLİT, DÜZENLEME, SİLME, YEDEK)
+        # 2. SINAV & VERİ YÖNETİMİ
         # ----------------------------------------------------
         with tab_yonetim:
             conn = get_db_connection()
             df_sinav_durum = pd.read_sql_query("SELECT sinav_kodu, kilitli FROM sinavlar", conn)
             
             if not df_sinav_durum.empty:
-                # 1. KİLİTLEME MODÜLÜ
                 st.markdown("### 🔒 Sınav Kilitleme (Finalization)")
                 col_kilit1, col_kilit2 = st.columns(2)
                 with col_kilit1:
@@ -243,138 +308,89 @@ else:
                     elif not mevcut_durum and st.button("🔒 Sınavı Kilitle", type="primary"):
                         conn.cursor().execute("UPDATE sinavlar SET kilitli=TRUE WHERE sinav_kodu=%s", (islem_yapilacak_sinav,))
                         conn.commit(); st.rerun()
-                
                 st.divider()
                 
-                # 2. SINAV DÜZENLEME MODÜLÜ
                 st.markdown("### ✏️ Sınav Düzenle (Ayarlar ve ToS)")
-                st.info("Sınavı silmeden, mevcut tolerans ayarını veya Belirtke Tablosunu (ToS) güncelleyebilirsiniz. Uyarı: Eğer not girişi yapıldıysa ToS'taki sütun isimlerini (Ana Bölüm/Alt Bölüm) değiştirmek notların görüntülenmesinde sorun yaratabilir, sadece puan güncellemesi önerilir.")
-                
                 duzenlenecek_sinav = st.selectbox("Düzenlenecek Sınavı Seçin", df_sinav_durum['sinav_kodu'].tolist(), key="edit_exam_select")
-                
-                # Mevcut Toleransı Çek (Buradaki hata düzeltildi)
                 cur = conn.cursor()
                 cur.execute("SELECT tolerans FROM sinav_ayarlari WHERE sinav_kodu=%s", (duzenlenecek_sinav,))
                 tol_res = cur.fetchone()
                 mevcut_tolerans = int(tol_res[0]) if (tol_res and tol_res[0] is not None) else 6
-                
                 yeni_tolerans = st.number_input("Güncel Çift Okuma Tolerans Farkı", min_value=0, value=mevcut_tolerans)
-                
-                # Mevcut ToS'u Çek
                 df_mevcut_tos = pd.read_sql_query("SELECT ana_bolum AS \"Ana Bölüm\", alt_bolum AS \"Alt Bölüm (Part)\", kazanimlar AS \"Ölçülen Kazanımlar\", max_puan AS \"Max Puan\" FROM sinav_tos WHERE sinav_kodu=%s", conn, params=(duzenlenecek_sinav,))
                 
                 st.markdown("**Güncel Belirtke Tablosu (ToS):**")
-                guncel_tos = st.data_editor(
-                    df_mevcut_tos, 
-                    num_rows="dynamic", 
-                    column_config={
-                        "Ana Bölüm": st.column_config.SelectboxColumn("Ana Bölüm", options=ANA_BOLUMLER, required=True),
-                        "Max Puan": st.column_config.NumberColumn("Max Puan", step=0.5, format="%.2f")
-                    }, 
-                    use_container_width=True,
-                    key="edit_tos_editor"
-                )
-                
+                guncel_tos = st.data_editor(df_mevcut_tos, num_rows="dynamic", column_config={"Ana Bölüm": st.column_config.SelectboxColumn("Ana Bölüm", options=ANA_BOLUMLER, required=True), "Max Puan": st.column_config.NumberColumn("Max Puan", step=0.5, format="%.2f")}, use_container_width=True, key="edit_tos_editor")
                 if st.button("💾 Değişiklikleri Kaydet (Sınavı Güncelle)", type="primary"):
                     cur.execute("UPDATE sinav_ayarlari SET tolerans=%s WHERE sinav_kodu=%s", (yeni_tolerans, duzenlenecek_sinav))
                     cur.execute("DELETE FROM sinav_tos WHERE sinav_kodu=%s", (duzenlenecek_sinav,))
                     for _, row in guncel_tos.iterrows():
                         cur.execute("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan) VALUES (%s, %s, %s, %s, %s)", (duzenlenecek_sinav, row['Ana Bölüm'], row['Alt Bölüm (Part)'], row['Ölçülen Kazanımlar'], float(row['Max Puan'])))
-                    conn.commit()
-                    st.success(f"{duzenlenecek_sinav} başarıyla güncellendi!")
-                
+                    conn.commit(); st.success(f"{duzenlenecek_sinav} başarıyla güncellendi!")
                 st.divider()
                 
-                # 3. SINAV SİLME MODÜLÜ
                 st.markdown("### 🗑️ Sınav Silme")
                 silinecek_sinav = st.selectbox("Silinecek Sınavı Seçin", df_sinav_durum['sinav_kodu'].tolist(), key="sil_sec")
                 if st.button("🗑️ Seçili Sınavı Tamamen Sil"):
-                    conn.cursor().execute("DELETE FROM sinavlar WHERE sinav_kodu=%s", (silinecek_sinav,))
-                    conn.commit(); st.success("Sınav silindi!"); st.rerun()
+                    conn.cursor().execute("DELETE FROM sinavlar WHERE sinav_kodu=%s", (silinecek_sinav,)); conn.commit(); st.success("Sınav silindi!"); st.rerun()
             else: st.info("Sistemde kayıtlı sınav yok.")
             
             if st.session_state['rol'] == "Admin":
                 st.divider()
-                st.markdown("### 💾 Felaket Kurtarma Yedeği (Disaster Backup)")
+                st.markdown("### 💾 Felaket Kurtarma Yedeği")
                 st.download_button(label="📦 Tüm Veritabanını Excel Olarak İndir", data=get_db_backup_excel(), file_name="YDYO_Tam_Sistem_Yedegi.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
             conn.close()
 
         # ----------------------------------------------------
-        # 3. KULLANICILAR (EKLEME & DÜZENLEME AYRILDI)
+        # 3. KULLANICILAR & ATAMALAR
         # ----------------------------------------------------
         if st.session_state['rol'] == "Admin":
             with tab_kullanici:
                 st.subheader("👥 Kullanıcı Yönetimi")
                 conn = get_db_connection()
                 df_kullanicilar = pd.read_sql_query("SELECT kullanici_adi, rol, isim FROM kullanicilar", conn)
-                
-                # YENİ KULLANICI EKLE
                 with st.expander("➕ Yeni Kullanıcı Ekle", expanded=False):
                     c_k1, c_k2 = st.columns(2)
-                    with c_k1: 
-                        yeni_k_adi = st.text_input("Kullanıcı Adı (ID)", key="new_id")
-                        yeni_sifre = st.text_input("Şifre", type="password", key="new_pw")
-                    with c_k2: 
-                        yeni_rol = st.selectbox("Rol", ["Öğretim Elemanı", "Testing", "Admin"], key="new_role")
-                        yeni_isim = st.text_input("İsim (Örn: Dr. Ahmet)", key="new_name")
-                    
+                    with c_k1: yeni_k_adi = st.text_input("Kullanıcı Adı (ID)", key="new_id"); yeni_sifre = st.text_input("Şifre", type="password", key="new_pw")
+                    with c_k2: yeni_rol = st.selectbox("Rol", ["Öğretim Elemanı", "Testing", "Admin"], key="new_role"); yeni_isim = st.text_input("İsim (Örn: Dr. Ahmet)", key="new_name")
                     if st.button("Yeni Kullanıcıyı Kaydet", type="primary"):
                         if yeni_k_adi and yeni_sifre and yeni_isim:
                             cur = conn.cursor()
                             cur.execute("SELECT kullanici_adi FROM kullanicilar WHERE kullanici_adi=%s", (yeni_k_adi,))
-                            if cur.fetchone():
-                                st.error("Bu kullanıcı adı zaten mevcut! Lütfen farklı bir ID seçin veya 'Düzenle' sekmesini kullanın.")
+                            if cur.fetchone(): st.error("Bu ID zaten mevcut!")
                             else:
-                                h_pwd = hash_sifre(yeni_sifre)
-                                cur.execute("INSERT INTO kullanicilar (kullanici_adi, sifre, rol, isim) VALUES (%s, %s, %s, %s)", (yeni_k_adi, h_pwd, yeni_rol, yeni_isim))
-                                conn.commit(); st.success(f"{yeni_k_adi} sisteme eklendi!"); st.rerun()
+                                cur.execute("INSERT INTO kullanicilar (kullanici_adi, sifre, rol, isim) VALUES (%s, %s, %s, %s)", (yeni_k_adi, hash_sifre(yeni_sifre), yeni_rol, yeni_isim))
+                                conn.commit(); st.success(f"{yeni_k_adi} eklendi!"); st.rerun()
                         else: st.warning("Tüm alanları doldurunuz.")
-                
-                # MEVCUT KULLANICIYI DÜZENLE
-                with st.expander("✏️ Mevcut Kullanıcıyı Düzenle (İsim, Rol veya ID Değişimi)", expanded=False):
+                with st.expander("✏️ Mevcut Kullanıcıyı Düzenle", expanded=False):
                     if not df_kullanicilar.empty:
-                        duzenlenecek_kullanici = st.selectbox("Düzenlenecek Kullanıcıyı Seçin", df_kullanicilar['kullanici_adi'].tolist())
+                        duzenlenecek_kullanici = st.selectbox("Düzenlenecek Kullanıcı", df_kullanicilar['kullanici_adi'].tolist())
                         mevcut_bilgi = df_kullanicilar[df_kullanicilar['kullanici_adi'] == duzenlenecek_kullanici].iloc[0]
-                        
                         c_e1, c_e2 = st.columns(2)
-                        with c_e1:
-                            edit_id = st.text_input("Kullanıcı Adı (ID)", value=mevcut_bilgi['kullanici_adi'], key="edit_id")
-                            edit_pw = st.text_input("Yeni Şifre (Değiştirmek İstemiyorsanız BOŞ Bırakın)", type="password", key="edit_pw")
+                        with c_e1: edit_id = st.text_input("Kullanıcı Adı (ID)", value=mevcut_bilgi['kullanici_adi'], key="edit_id"); edit_pw = st.text_input("Yeni Şifre (Değişmeyecekse BOŞ Bırakın)", type="password", key="edit_pw")
                         with c_e2:
                             roller = ["Öğretim Elemanı", "Testing", "Admin"]
-                            mevcut_rol_index = roller.index(mevcut_bilgi['rol']) if mevcut_bilgi['rol'] in roller else 0
-                            edit_rol = st.selectbox("Rol", roller, index=mevcut_rol_index, key="edit_role")
+                            edit_rol = st.selectbox("Rol", roller, index=roller.index(mevcut_bilgi['rol']) if mevcut_bilgi['rol'] in roller else 0, key="edit_role")
                             edit_isim = st.text_input("İsim", value=mevcut_bilgi['isim'], key="edit_name")
-                            
-                        if st.button("Kullanıcı Bilgilerini Güncelle"):
+                        if st.button("Güncelle"):
                             cur = conn.cursor()
                             if edit_id != duzenlenecek_kullanici:
                                 cur.execute("SELECT kullanici_adi FROM kullanicilar WHERE kullanici_adi=%s", (edit_id,))
-                                if cur.fetchone():
-                                    st.error("Girdiğiniz yeni Kullanıcı Adı (ID) zaten başkası tarafından kullanılıyor!")
-                                    st.stop()
+                                if cur.fetchone(): st.error("Bu ID zaten kullanımda!"); st.stop()
                                 cur.execute("UPDATE hoca_atamalari SET kullanici_adi=%s WHERE kullanici_adi=%s", (edit_id, duzenlenecek_kullanici))
                                 cur.execute("UPDATE kullanicilar SET kullanici_adi=%s, rol=%s, isim=%s WHERE kullanici_adi=%s", (edit_id, edit_rol, edit_isim, duzenlenecek_kullanici))
                             else:
                                 cur.execute("UPDATE kullanicilar SET rol=%s, isim=%s WHERE kullanici_adi=%s", (edit_rol, edit_isim, duzenlenecek_kullanici))
-                            
-                            if edit_pw:
-                                cur.execute("UPDATE kullanicilar SET sifre=%s WHERE kullanici_adi=%s", (hash_sifre(edit_pw), edit_id))
-                                
-                            conn.commit()
-                            st.success("Kullanıcı başarıyla güncellendi!")
-                            st.rerun()
-
+                            if edit_pw: cur.execute("UPDATE kullanicilar SET sifre=%s WHERE kullanici_adi=%s", (hash_sifre(edit_pw), edit_id))
+                            conn.commit(); st.success("Kullanıcı güncellendi!"); st.rerun()
                 st.markdown("**Sistemdeki Kullanıcılar**")
                 st.dataframe(df_kullanicilar, use_container_width=True, hide_index=True)
                 sil_k_adi = st.selectbox("Silinecek Kullanıcı", df_kullanicilar['kullanici_adi'].tolist() if not df_kullanicilar.empty else [])
                 if st.button("Kullanıcıyı Sil") and sil_k_adi:
                     if sil_k_adi == st.session_state['kullanici_adi']: st.error("Kendinizi silemezsiniz!")
-                    else:
-                        cur = conn.cursor(); cur.execute("DELETE FROM kullanicilar WHERE kullanici_adi=%s", (sil_k_adi,)); conn.commit(); st.rerun()
+                    else: conn.cursor().execute("DELETE FROM kullanicilar WHERE kullanici_adi=%s", (sil_k_adi,)); conn.commit(); st.rerun()
                 conn.close()
                 
-            # ÖĞRENCİ VE ATAMALAR
             with tab_atamalar:
                 conn = get_db_connection()
                 c_ata1, c_ata2 = st.columns(2)
@@ -395,7 +411,7 @@ else:
                 conn.close()
                 
         # ----------------------------------------------------
-        # 4. GELİŞMİŞ ANALİTİK RAPORLAR (KARNELER DAHİL)
+        # 4. GELİŞMİŞ ANALİTİK VE KARNE RAPORLARI
         # ----------------------------------------------------
         with tab_rapor:
             st.markdown("### 🔬 Gelişmiş Ölçme & Değerlendirme Analitiği")
@@ -411,6 +427,7 @@ else:
             conn = get_db_connection()
             cur = conn.cursor()
             
+            # 1. KONSOLİDE BAŞARI
             if rapor_kapsami == "🏆 Dönem Sonu Konsolide Başarı":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
                 acik_sinavlar = [r[0] for r in cur.fetchall()]
@@ -419,13 +436,11 @@ else:
                     secilen_sinavlar_konsolide = st.multiselect("Hesaplamaya Dahil Edilecek Sınavları Seçin", acik_sinavlar)
                     if secilen_sinavlar_konsolide:
                         c_weights = st.columns(len(secilen_sinavlar_konsolide))
-                        agirliklar = {}
-                        toplam_agirlik = 0
+                        agirliklar = {}; toplam_agirlik = 0
                         for i, sk in enumerate(secilen_sinavlar_konsolide):
                             with c_weights[i]:
                                 w = st.number_input(f"{sk} Ağırlığı (%)", min_value=0, max_value=100, value=100//len(secilen_sinavlar_konsolide))
-                                agirliklar[sk] = w
-                                toplam_agirlik += w
+                                agirliklar[sk] = w; toplam_agirlik += w
                         if toplam_agirlik != 100: st.error(f"⚠️ Toplam ağırlık 100 olmalıdır! (Şu an: {toplam_agirlik})")
                         else:
                             gecme_notu = st.number_input("Geçme Barajı", min_value=0, max_value=100, value=65)
@@ -451,11 +466,11 @@ else:
                                         data["Durum"] = "BAŞARILI" if nihai_puan >= gecme_notu else "BAŞARISIZ"
                                         sonuclar.append(data)
                                     df_sonuc = pd.DataFrame(sonuclar).sort_values(by="Nihai Puan", ascending=False)
-                                    
                                     try: styled_df = df_sonuc.style.map(lambda x: 'background-color: #D5F5E3' if x=='BAŞARILI' else 'background-color: #FADBD8' if x=='BAŞARISIZ' else '', subset=['Durum'])
                                     except: styled_df = df_sonuc.style.applymap(lambda x: 'background-color: #D5F5E3' if x=='BAŞARILI' else 'background-color: #FADBD8' if x=='BAŞARISIZ' else '', subset=['Durum'])
                                     st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
+            # 2. ITEM DISCRIMINATION
             elif rapor_kapsami == "🎯 Madde Ayırt Edicilik (Item Discrimination)":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
                 sinavlar = [r[0] for r in cur.fetchall()]
@@ -482,7 +497,6 @@ else:
                                     d_index = (ust_ortalama / max_p if max_p > 0 else 0) - (alt_ortalama / max_p if max_p > 0 else 0)
                                     durum = "Çok İyi Madde" if d_index >= 0.40 else "İyi Madde" if d_index >= 0.30 else "Zayıf Madde" if d_index >= 0.20 else "Çöpe Atılmalı"
                                     sonuclar.append({"Bölüm": bolum, "Max": max_p, "Üst %27": round(ust_ortalama, 2), "Alt %27": round(alt_ortalama, 2), "D İndeksi": round(d_index, 3), "Yorum": durum})
-                            
                             df_s = pd.DataFrame(sonuclar)
                             if not df_s.empty:
                                 def renk_ver(val):
@@ -492,9 +506,9 @@ else:
                                     return ''
                                 try: styler = df_s.style.map(renk_ver, subset=['Yorum'])
                                 except AttributeError: styler = df_s.style.applymap(renk_ver, subset=['Yorum'])
-                                
                                 st.dataframe(styler, use_container_width=True)
 
+            # 3. INTER-RATER RELIABILITY
             elif rapor_kapsami == "⚖️ Puanlayıcı Güvenirliği (Inter-Rater Reliability)":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
                 sinavlar = [r[0] for r in cur.fetchall()]
@@ -524,7 +538,8 @@ else:
                                         st.write("**⚠️ Yüksek Sapma (Fark > 10):**")
                                         st.dataframe(df_cift[df_cift['Puan Farkı'] > 10].sort_values(by="Puan Farkı", ascending=False), use_container_width=True)
                                         st.divider()
-                                        
+            
+            # 4. BİREYSEL KARNELER (GÖRSEL BARLARLA İADE EDİLDİ)
             elif rapor_kapsami == "👤 Bireysel Karneler":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
                 sinavlar = [r[0] for r in cur.fetchall()]
@@ -536,22 +551,36 @@ else:
                     if not subeler: st.warning("Bu sınava ait girilmiş not yok.")
                     else:
                         sec_sube = st.selectbox("Şube Seçin", subeler)
+                        # ToS ve Max puanları çek
+                        cur.execute("SELECT ana_bolum, alt_bolum, max_puan FROM sinav_tos WHERE sinav_kodu=%s", (sec_sinav,))
+                        tos_df = pd.DataFrame(cur.fetchall(), columns=["ana_bolum", "alt_bolum", "max_puan"])
+                        max_puan_dict = {f"{row['ana_bolum']} - {row['alt_bolum']}": float(row['max_puan']) for _, row in tos_df.iterrows()}
+                        
                         cur.execute("SELECT veri_json FROM notlar WHERE sinav_kodu=%s AND sube=%s", (sec_sinav, sec_sube))
-                        v = cur.fetchone()
-                        df_k = pd.read_json(io.StringIO(v[0]))
+                        df_k = pd.read_json(io.StringIO(cur.fetchone()[0]))
+                        
                         if not df_k.empty:
                             sec_ogr = st.selectbox("Öğrenci Seçin", df_k['Ad_Soyad'].tolist())
                             ogr_veri = df_k[df_k['Ad_Soyad'] == sec_ogr].iloc[0]
-                            st.write(f"**Öğrenci:** {sec_ogr}")
-                            st.write(f"**Sınav Notu:** {ogr_veri.get('Sınav Notu', 0)}")
+                            st.markdown(f"#### 🎓 Öğrenci: {sec_ogr} (Toplam: {ogr_veri.get('Sınav Notu', 0)})")
                             
-                            if st.button("PDF Karne İndir"):
-                                df_pdf = pd.DataFrame({"Beceri/Bölüm": [c for c in df_k.columns if c not in ["Ogrenci_No", "Ad_Soyad", "Sınav Notu"]],
-                                                       "Alınan Puan": [ogr_veri[c] for c in df_k.columns if c not in ["Ogrenci_No", "Ad_Soyad", "Sınav Notu"]]})
-                                r_veri = [{'baslik': f"{sec_sinav} - Bireysel Karne", 'alt_baslik': f"Öğrenci: {sec_ogr} | Toplam Not: {ogr_veri.get('Sınav Notu', 0)}", 'df_list': [("Beceri Detayları", df_pdf)]}]
+                            # UI Üzerinde Barlar
+                            b_yuzdeleri = {}
+                            for col, m_puan in max_puan_dict.items():
+                                if col in ogr_veri:
+                                    alinan = float(ogr_veri[col])
+                                    yuzde = (alinan / m_puan * 100) if m_puan > 0 else 0
+                                    b_yuzdeleri[col] = yuzde
+                                    st.write(f"**{col}** ({alinan} / {m_puan})")
+                                    st.progress(min(int(yuzde), 100))
+                            
+                            if st.button("PDF Karne İndir", type="primary"):
+                                df_pdf = pd.DataFrame({"Beceri/Bölüm": list(max_puan_dict.keys()), "Alınan Puan": [ogr_veri.get(c, 0) for c in max_puan_dict.keys()]})
+                                r_veri = [{'baslik': f"{sec_sinav} - Bireysel Karne", 'alt_baslik': f"Öğrenci: {sec_ogr} | Toplam Not: {ogr_veri.get('Sınav Notu', 0)}", 'df_list': [("Beceri Detayları", df_pdf)], 'beceri_grafik_verisi': b_yuzdeleri}]
                                 pdf_buf = create_modern_pdf(r_veri)
                                 st.download_button("📥 PDF Olarak İndir", data=pdf_buf, file_name=f"{sec_ogr}_Karne.pdf", mime="application/pdf")
             
+            # 5. SINIF / ŞUBE RAPORU (İSTATİSTİKLER, TOPLU KARNE VE DETAYLI PDF İLE İADE EDİLDİ)
             elif rapor_kapsami == "🏫 Sınıf / Şube Raporu":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
                 sinavlar = [r[0] for r in cur.fetchall()]
@@ -563,22 +592,64 @@ else:
                     if not subeler: st.warning("Bu sınava ait not yok.")
                     else:
                         sec_sube = st.selectbox("Şube Seçin", subeler, key="sr_sube")
+                        
+                        # ToS ve Max puanları çek
+                        cur.execute("SELECT ana_bolum, alt_bolum, max_puan FROM sinav_tos WHERE sinav_kodu=%s", (sec_sinav,))
+                        tos_df = pd.DataFrame(cur.fetchall(), columns=["ana_bolum", "alt_bolum", "max_puan"])
+                        max_puan_dict = {f"{row['ana_bolum']} - {row['alt_bolum']}": float(row['max_puan']) for _, row in tos_df.iterrows()}
+                        
                         cur.execute("SELECT veri_json FROM notlar WHERE sinav_kodu=%s AND sube=%s", (sec_sinav, sec_sube))
                         df_s = pd.read_json(io.StringIO(cur.fetchone()[0]))
                         
-                        st.markdown(f"### {sec_sube} - Genel Durum")
-                        st.metric("Sınıf Ortalaması", f"{df_s['Sınav Notu'].mean():.2f}")
-                        st.dataframe(df_s[['Ogrenci_No', 'Ad_Soyad', 'Sınav Notu']].sort_values(by="Sınav Notu", ascending=False), use_container_width=True, hide_index=True)
+                        st.markdown(f"### {sec_sube} - Genel Sınıf İstatistikleri")
+                        c1, c2, c3, c4 = st.columns(4)
+                        c1.metric("Sınıf Ortalaması", f"{df_s['Sınav Notu'].mean():.2f}")
+                        c2.metric("Medyan", f"{df_s['Sınav Notu'].median():.2f}")
+                        c3.metric("En Yüksek", f"{df_s['Sınav Notu'].max():.2f}")
+                        c4.metric("En Düşük", f"{df_s['Sınav Notu'].min():.2f}")
                         
-                        if st.button("Sınıf Raporunu PDF İndir"):
-                            r_veri = [{'baslik': f"{sec_sinav} - {sec_sube} Sınıf Raporu", 'alt_baslik': f"Sınıf Ortalaması: {df_s['Sınav Notu'].mean():.2f}", 'df_list': [("Tüm Öğrenciler", df_s[['Ogrenci_No', 'Ad_Soyad', 'Sınav Notu']])]}]
-                            pdf_buf = create_modern_pdf(r_veri)
-                            st.download_button("📥 Sınıf PDF İndir", data=pdf_buf, file_name=f"{sec_sube}_Rapor.pdf", mime="application/pdf")
+                        st.markdown("#### Beceri Bazlı Sınıf Ortalamaları")
+                        beceri_listesi_pdf = []
+                        for col, m_puan in max_puan_dict.items():
+                            if col in df_s.columns:
+                                ort = df_s[col].mean()
+                                yuzde = (ort / m_puan * 100) if m_puan > 0 else 0
+                                beceri_listesi_pdf.append({"isim": col, "ort": ort, "max": m_puan, "yuzde": yuzde})
+                                st.write(f"**{col}** (Sınıf Ort: {ort:.1f} / {m_puan})")
+                                st.progress(min(int(yuzde), 100))
+                                
+                        st.markdown("#### Öğrenci Detay Tablosu")
+                        cols_to_show = ["Ogrenci_No", "Ad_Soyad", "Sınav Notu"] + [c for c in max_puan_dict.keys() if c in df_s.columns]
+                        st.dataframe(df_s[cols_to_show].sort_values(by="Sınav Notu", ascending=False), use_container_width=True, hide_index=True)
+                        
+                        c_btn1, c_btn2 = st.columns(2)
+                        with c_btn1:
+                            if st.button("📊 Sınıf Raporunu İndir (Yatay - Landscape PDF)", type="primary"):
+                                kpi_df = pd.DataFrame({"Metric": ["Sınıf Ortalaması", "Medyan", "En Yüksek", "En Düşük", "Öğrenci Sayısı"], "Value": [f"{df_s['Sınav Notu'].mean():.2f}", f"{df_s['Sınav Notu'].median():.2f}", f"{df_s['Sınav Notu'].max():.2f}", f"{df_s['Sınav Notu'].min():.2f}", str(len(df_s))]})
+                                df_pdf_liste = df_s[cols_to_show].rename(columns={"Ogrenci_No": "Student ID", "Ad_Soyad": "Name Surname", "Sınav Notu": "Total Score"})
+                                veri = {'baslik': f"{sec_sinav} - Sınıf Performans Raporu", 'alt_baslik': f"Şube: {sec_sube}", 'df_kpi': kpi_df, 'beceri_listesi': beceri_listesi_pdf, 'df_liste': df_pdf_liste}
+                                pdf_buf = create_landscape_class_pdf(veri)
+                                st.download_button("📥 Yatay PDF İndir", data=pdf_buf, file_name=f"{sec_sube}_Rapor.pdf", mime="application/pdf")
+                        
+                        with c_btn2:
+                            if st.button("📦 Tüm Sınıfın Toplu Karnelerini İndir"):
+                                toplu_veriler = []
+                                for _, row in df_s.sort_values(by="Ad_Soyad").iterrows():
+                                    ogr_no = row.get('Ogrenci_No', '')
+                                    ogr_ad = row.get('Ad_Soyad', '')
+                                    toplam = row.get('Sınav Notu', 0)
+                                    b_yuzdeleri = {}
+                                    for c, mp in max_puan_dict.items():
+                                        if c in row: b_yuzdeleri[c] = (row[c]/mp*100) if mp>0 else 0
+                                    df_pdf = pd.DataFrame({"Beceri/Bölüm": list(max_puan_dict.keys()), "Alınan Puan": [row.get(c, 0) for c in max_puan_dict.keys()]})
+                                    toplu_veriler.append({'baslik': f"{sec_sinav} - Bireysel Karne", 'alt_baslik': f"Öğrenci: {ogr_no} - {ogr_ad} | Toplam Not: {toplam}", 'df_list': [("Beceri Detayları", df_pdf)], 'beceri_grafik_verisi': b_yuzdeleri})
+                                pdf_buf = create_modern_pdf(toplu_veriler)
+                                st.download_button("📥 Toplu Karneler (Tek PDF)", data=pdf_buf, file_name=f"{sec_sube}_Toplu_Karneler.pdf", mime="application/pdf")
 
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ (KİLİT KONTROLLÜ)
+    # 5. HOCA VERİ GİRİŞ PANELİ
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
         st.subheader("📝 Hızlı Veri Giriş Terminali")
