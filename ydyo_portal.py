@@ -115,10 +115,21 @@ else:
                 except: st.error("Format uyumsuz.")
 
             ANA_BOLUMLER = ["Listening I", "Listening II", "Reading I", "Reading II", "Grammar", "Functional Language", "Use of English", "Vocabulary", "Speaking", "Speaking 1st", "Speaking 2nd", "Speaking 3rd", "Writing", "Writing (1. Okuma)", "Writing (2. Okuma)", "Writing (3. Okuma)"]
-            if 'taslak_df' not in st.session_state:
-                st.session_state['taslak_df'] = pd.DataFrame({"Ana Bölüm": ["Grammar"], "Alt Bölüm (Part)": ["Part A"], "Ölçülen Kazanımlar": ["Present Simple"], "Max Puan": [15]})
             
-            duzenlenen_rubrik = st.data_editor(st.session_state['taslak_df'], num_rows="dynamic", column_config={"Ana Bölüm": st.column_config.SelectboxColumn("Ana Bölüm", options=ANA_BOLUMLER, required=True)}, use_container_width=True)
+            # BURASI DÜZELTİLDİ: [15] yerine [15.0] kullanılarak sütun ondalıklı (float) hale getirildi
+            if 'taslak_df' not in st.session_state:
+                st.session_state['taslak_df'] = pd.DataFrame({"Ana Bölüm": ["Grammar"], "Alt Bölüm (Part)": ["Part A"], "Ölçülen Kazanımlar": ["Present Simple"], "Max Puan": [15.0]})
+            
+            # BURASI DÜZELTİLDİ: column_config içine Max Puan için NumberColumn ondalıklı ayarı eklendi
+            duzenlenen_rubrik = st.data_editor(
+                st.session_state['taslak_df'], 
+                num_rows="dynamic", 
+                column_config={
+                    "Ana Bölüm": st.column_config.SelectboxColumn("Ana Bölüm", options=ANA_BOLUMLER, required=True),
+                    "Max Puan": st.column_config.NumberColumn("Max Puan", step=0.5, format="%.2f")
+                }, 
+                use_container_width=True
+            )
             
             if st.button("🚀 Sınavı Onayla & Öğretim Elemanlarına Aç", type="primary"):
                 conn = get_db_connection()
@@ -129,7 +140,8 @@ else:
                     cur.execute("INSERT INTO sinavlar (sinav_kodu, kilitli) VALUES (%s, FALSE)", (sinav_kodu,))
                     cur.execute("INSERT INTO sinav_ayarlari (sinav_kodu, tolerans) VALUES (%s, %s)", (sinav_kodu, tolerans_baremi))
                     for _, row in duzenlenen_rubrik.iterrows():
-                        cur.execute("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan) VALUES (%s, %s, %s, %s, %s)", (sinav_kodu, row['Ana Bölüm'], row['Alt Bölüm (Part)'], row['Ölçülen Kazanımlar'], row['Max Puan']))
+                        # Max Puan veritabanına ondalıklı kaydedilir
+                        cur.execute("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan) VALUES (%s, %s, %s, %s, %s)", (sinav_kodu, row['Ana Bölüm'], row['Alt Bölüm (Part)'], row['Ölçülen Kazanımlar'], float(row['Max Puan'])))
                     conn.commit()
                     st.success("Sınav başarıyla buluta kaydedildi!")
                 cur.close(); conn.close()
@@ -223,7 +235,6 @@ else:
             conn = get_db_connection()
             cur = conn.cursor()
             
-            # 1. KONSOLİDE BAŞARI RAPORU
             if rapor_kapsami == "🏆 Dönem Sonu Konsolide Başarı":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
                 acik_sinavlar = [r[0] for r in cur.fetchall()]
@@ -266,7 +277,6 @@ else:
                                     df_sonuc = pd.DataFrame(sonuclar).sort_values(by="Nihai Puan", ascending=False)
                                     st.dataframe(df_sonuc.style.applymap(lambda x: 'background-color: #D5F5E3' if x=='BAŞARILI' else 'background-color: #FADBD8' if x=='BAŞARISIZ' else '', subset=['Durum']), use_container_width=True, hide_index=True)
             
-            # 2. MADDE AYIRT EDİCİLİK ANALİZİ
             elif rapor_kapsami == "🎯 Madde Ayırt Edicilik (Item Discrimination)":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
                 sinavlar = [r[0] for r in cur.fetchall()]
@@ -295,7 +305,6 @@ else:
                                     sonuclar.append({"Bölüm": bolum, "Max": max_p, "Üst %27": round(ust_ortalama, 2), "Alt %27": round(alt_ortalama, 2), "D İndeksi": round(d_index, 3), "Yorum": durum})
                             st.dataframe(pd.DataFrame(sonuclar).style.applymap(lambda x: 'color: green; font-weight: bold;' if "Çok İyi" in x else 'background-color: #FADBD8' if "Çöpe" in x else '', subset=['Yorum']), use_container_width=True)
 
-            # 3. PUANLAYICI GÜVENİRLİĞİ
             elif rapor_kapsami == "⚖️ Puanlayıcı Güvenirliği (Inter-Rater Reliability)":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
                 sinavlar = [r[0] for r in cur.fetchall()]
