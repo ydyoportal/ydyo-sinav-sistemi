@@ -785,30 +785,25 @@ else:
             max_puan_sozlugu = {f"{r['ana_bolum']} - {r['alt_bolum']}": float(r['max_puan']) for _, r in rubrik_df.iterrows()}
             df_to_save = girilen_notlar_df.copy()
             
+            # GÜNCELLEME: TypeError'ı engellemek için string sütunları işlem öncesi tam sayı/float kalıbına sokuyoruz
+            for col in max_puan_sozlugu.keys():
+                df_to_save[col] = pd.to_numeric(df_to_save[col].astype(str).str.replace(',', '.').replace(['', 'nan'], '0'), errors='coerce').fillna(0.0)
+            
+            df_to_save["Sınav Notu"] = 0.0
+            
             for idx, row in df_to_save.iterrows():
                 if row.get("Sınava Girdi", True):
                     ogrenci_toplam = 0.0
                     for col, m_puan in max_puan_sozlugu.items():
-                        raw_val = str(row.get(col, "0")).replace(",", ".")
-                        if raw_val.strip() == "" or raw_val.strip() == "nan": raw_val = "0"
-                        val = pd.to_numeric(raw_val, errors='coerce')
-                        
-                        if pd.notnull(val):
-                            if val > m_puan: hatalar.append(f"**{row.get('Ogrenci_No', '')}**: '{col}' notu ({val}), max ({m_puan}) aşıyor!")
-                            df_to_save.at[idx, col] = val
-                            ogrenci_toplam += val
-                        else:
-                            df_to_save.at[idx, col] = 0.0
+                        val = df_to_save.at[idx, col]
+                        if val > m_puan: hatalar.append(f"**{row.get('Ogrenci_No', '')}**: '{col}' notu ({val}), max ({m_puan}) aşıyor!")
+                        ogrenci_toplam += val
                     df_to_save.at[idx, "Sınav Notu"] = round(ogrenci_toplam, 2)
                 else:
                     for col in max_puan_sozlugu.keys(): df_to_save.at[idx, col] = 0.0
                     df_to_save.at[idx, "Sınav Notu"] = 0.0
                     
             if hatalar: st.error("🛑 HATA!"); [st.warning(h) for h in hatalar]; st.stop()
-            
-            for col in max_puan_sozlugu.keys():
-                df_to_save[col] = df_to_save[col].astype(float)
-            df_to_save["Sınav Notu"] = df_to_save["Sınav Notu"].astype(float)
                 
             cur.execute("""INSERT INTO notlar (sinav_kodu, sube, veri_json) VALUES (%s, %s, %s) ON CONFLICT (sinav_kodu, sube) DO UPDATE SET veri_json = EXCLUDED.veri_json;""", (secilen_islem_sinavi, secilen_sube, df_to_save.to_json(orient="records")))
             conn.commit(); cur.close(); conn.close()
