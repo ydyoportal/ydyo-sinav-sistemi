@@ -12,20 +12,17 @@ from reportlab.lib import colors
 
 st.set_page_config(page_title="KTO Karatay YDY Portalı", page_icon="🔐", layout="wide")
 
-SALT = "KTO_YDYO_SECURE_SALT_2026"
-
+# GÜVENLİK: Şifreler ve bağlantı adresi sadece Streamlit Secrets üzerinden çekilir
 def hash_sifre(sifre: str) -> str:
     if not sifre: return ""
     if len(sifre) == 64 and all(c in '0123456789abcdefABCDEF' for c in sifre): return sifre
-    return hashlib.sha256((sifre + SALT).encode('utf-8')).hexdigest()
+    return hashlib.sha256((sifre + st.secrets["PASSWORD_SALT"]).encode('utf-8')).hexdigest()
 
 def sifre_dogrula(girilen_sifre: str, hashli_sifre: str) -> bool:
     return hash_sifre(girilen_sifre) == hashli_sifre
 
 def get_db_connection():
-    if "SUPABASE_URI" in st.secrets: uri = st.secrets["SUPABASE_URI"]
-    else: uri = "postgresql://postgres.atyewikzyuvembeikirx:X9R%24t9vVu7ctF%24%21@aws-0-ap-southeast-2.pooler.supabase.com:5432/postgres"
-    return psycopg2.connect(uri)
+    return psycopg2.connect(st.secrets["SUPABASE_URI"])
 
 def get_db_backup_excel():
     conn = get_db_connection()
@@ -58,7 +55,6 @@ class ModernBar(Flowable):
         elif self.percentage >= 50: self.color = colors.HexColor("#F1C40F")
         else: self.color = colors.HexColor("#E74C3C")
     
-    # LAYOUT ERROR ÇÖZÜMÜ İÇİN EKLENEN WRAP FONKSİYONU
     def wrap(self, availWidth, availHeight):
         return (self.width, self.height)
         
@@ -105,14 +101,12 @@ def create_landscape_class_pdf(veri):
         bar = ModernBar(130, 10, b_dict['yuzde'])
         skills_data.append([Paragraph(tr_to_eng(b_dict['isim']), cell_style_left), Paragraph(tr_to_eng(b_dict.get('kazanim', '')), cell_style_left), Paragraph(f"{b_dict['ort']:.1f}", cell_style), Paragraph(str(b_dict['max']), cell_style), bar])
     
-    # SÜTUN GENİŞLİKLERİ KÜÇÜLTÜLEREK SAYFAYA SIĞDIRILDI (TOPLAM 510)
     skill_table = Table(skills_data, colWidths=[110, 180, 40, 40, 140])
     s_style = [('BACKGROUND', (0,0), (-1,0), colors.HexColor("#2C3E50")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey)]
     for i in range(1, len(skills_data)):
         if i % 2 == 0: s_style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor("#F8F9F9")))
     skill_table.setStyle(TableStyle(s_style))
     
-    # TAŞMA HATASI (LAYOUT ERROR) OLMAMASI İÇİN İÇ BOŞLUKLAR (PADDING) SIFIRLANDI
     kapsayici_tablo = Table([[kpi_table, skill_table]], colWidths=[240, 542])
     kapsayici_tablo.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'TOP'),
@@ -590,7 +584,6 @@ else:
                                         st.dataframe(df_cift[df_cift['Puan Farkı'] > 10].sort_values(by="Puan Farkı", ascending=False), use_container_width=True)
                                         st.divider()
             
-            # 4. BİREYSEL KARNELER
             elif rapor_kapsami == "👤 Bireysel Karneler":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
                 sinavlar = [r[0] for r in cur.fetchall()]
@@ -642,7 +635,6 @@ else:
                                         st.success("PDF başarıyla oluşturuldu!")
                                         st.download_button("📥 PDF Olarak İndir", data=pdf_buf, file_name=f"{sec_ogr}_ReportCard.pdf", mime="application/pdf")
             
-            # 5. SINIF / ŞUBE RAPORU
             elif rapor_kapsami == "🏫 Sınıf / Şube Raporu":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
                 sinavlar = [r[0] for r in cur.fetchall()]
@@ -723,7 +715,7 @@ else:
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ
+    # 5. HOCA VERİ GİRİŞ PANELİ 
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
         st.subheader("📝 Hızlı Veri Giriş Terminali")
