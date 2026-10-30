@@ -268,15 +268,17 @@ else:
 
             ANA_BOLUMLER = ["Listening I", "Listening II", "Reading I", "Reading II", "Grammar", "Functional Language", "Use of English", "Vocabulary", "Speaking", "Speaking 1st", "Speaking 2nd", "Speaking 3rd", "Writing", "Writing (1. Okuma)", "Writing (2. Okuma)", "Writing (3. Okuma)"]
             
+            # GÜNCELLEME: Varsayılan değer "15,0" (string) yapılarak virgüllü sisteme uyarlandı
             if 'taslak_df' not in st.session_state:
-                st.session_state['taslak_df'] = pd.DataFrame({"Ana Bölüm": ["Grammar"], "Alt Bölüm (Part)": ["Part A"], "Ölçülen Kazanımlar": ["Present Simple"], "Max Puan": [15.0]})
+                st.session_state['taslak_df'] = pd.DataFrame({"Ana Bölüm": ["Grammar"], "Alt Bölüm (Part)": ["Part A"], "Ölçülen Kazanımlar": ["Present Simple"], "Max Puan": ["15,0"]})
             
+            # GÜNCELLEME: TextColumn kullanılarak hocaların hem virgül hem nokta girebilmesi sağlandı
             duzenlenen_rubrik = st.data_editor(
                 st.session_state['taslak_df'], 
                 num_rows="dynamic", 
                 column_config={
                     "Ana Bölüm": st.column_config.SelectboxColumn("Ana Bölüm", options=ANA_BOLUMLER, required=True),
-                    "Max Puan": st.column_config.NumberColumn("Max Puan", step=0.5, format="%.2f")
+                    "Max Puan": st.column_config.TextColumn("Max Puan")
                 }, 
                 use_container_width=True
             )
@@ -290,7 +292,9 @@ else:
                     cur.execute("INSERT INTO sinavlar (sinav_kodu, kilitli) VALUES (%s, FALSE)", (sinav_kodu,))
                     cur.execute("INSERT INTO sinav_ayarlari (sinav_kodu, tolerans) VALUES (%s, %s)", (sinav_kodu, tolerans_baremi))
                     for _, row in duzenlenen_rubrik.iterrows():
-                        cur.execute("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan) VALUES (%s, %s, %s, %s, %s)", (sinav_kodu, row['Ana Bölüm'], row['Alt Bölüm (Part)'], row['Ölçülen Kazanımlar'], float(row['Max Puan'])))
+                        # GÜNCELLEME: Virgülleri noktaya çevirip buluta ondalıklı sayı olarak kaydeder
+                        saf_max = float(str(row['Max Puan']).replace(',', '.'))
+                        cur.execute("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan) VALUES (%s, %s, %s, %s, %s)", (sinav_kodu, row['Ana Bölüm'], row['Alt Bölüm (Part)'], row['Ölçülen Kazanımlar'], saf_max))
                     conn.commit()
                     st.success("Sınav başarıyla buluta kaydedildi!")
                 cur.close(); conn.close()
@@ -328,13 +332,17 @@ else:
                 yeni_tolerans = st.number_input("Güncel Çift Okuma Tolerans Farkı", min_value=0, value=mevcut_tolerans)
                 df_mevcut_tos = pd.read_sql_query("SELECT ana_bolum AS \"Ana Bölüm\", alt_bolum AS \"Alt Bölüm (Part)\", kazanimlar AS \"Ölçülen Kazanımlar\", max_puan AS \"Max Puan\" FROM sinav_tos WHERE sinav_kodu=%s", conn, params=(duzenlenecek_sinav,))
                 
+                # GÜNCELLEME: Düzenleme sayfasında da noktaları virgüle çevirerek metin halinde sunar
+                df_mevcut_tos["Max Puan"] = df_mevcut_tos["Max Puan"].astype(str).str.replace(".", ",")
+                
                 st.markdown("**Güncel Belirtke Tablosu (ToS):**")
-                guncel_tos = st.data_editor(df_mevcut_tos, num_rows="dynamic", column_config={"Ana Bölüm": st.column_config.SelectboxColumn("Ana Bölüm", options=ANA_BOLUMLER, required=True), "Max Puan": st.column_config.NumberColumn("Max Puan", step=0.5, format="%.2f")}, use_container_width=True, key="edit_tos_editor")
+                guncel_tos = st.data_editor(df_mevcut_tos, num_rows="dynamic", column_config={"Ana Bölüm": st.column_config.SelectboxColumn("Ana Bölüm", options=ANA_BOLUMLER, required=True), "Max Puan": st.column_config.TextColumn("Max Puan")}, use_container_width=True, key="edit_tos_editor")
                 if st.button("💾 Değişiklikleri Kaydet (Sınavı Güncelle)", type="primary"):
                     cur.execute("UPDATE sinav_ayarlari SET tolerans=%s WHERE sinav_kodu=%s", (yeni_tolerans, duzenlenecek_sinav))
                     cur.execute("DELETE FROM sinav_tos WHERE sinav_kodu=%s", (duzenlenecek_sinav,))
                     for _, row in guncel_tos.iterrows():
-                        cur.execute("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan) VALUES (%s, %s, %s, %s, %s)", (duzenlenecek_sinav, row['Ana Bölüm'], row['Alt Bölüm (Part)'], row['Ölçülen Kazanımlar'], float(row['Max Puan'])))
+                        saf_max = float(str(row['Max Puan']).replace(',', '.'))
+                        cur.execute("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan) VALUES (%s, %s, %s, %s, %s)", (duzenlenecek_sinav, row['Ana Bölüm'], row['Alt Bölüm (Part)'], row['Ölçülen Kazanımlar'], saf_max))
                     conn.commit(); st.success(f"{duzenlenecek_sinav} başarıyla güncellendi!")
                 st.divider()
                 
@@ -410,7 +418,6 @@ else:
             with tab_atamalar:
                 conn = get_db_connection()
                 st.markdown("**Sınıf - Hoca Ataması Yap**")
-                st.info("Aşağıdaki formu kullanarak hangi hocanın hangi modülde ve şubede ders verdiğini atayabilirsiniz. Öğretmenler kendi panellerine girdiklerinde SADECE burada atandıkları modülün sınavlarını görebileceklerdir.")
                 
                 df_hocalar = pd.read_sql_query("SELECT kullanici_adi, isim FROM kullanicilar WHERE rol != 'Admin'", conn)
                 hoca_dict = dict(zip(df_hocalar.kullanici_adi, df_hocalar.isim)) if not df_hocalar.empty else {}
@@ -715,7 +722,7 @@ else:
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ 
+    # 5. HOCA VERİ GİRİŞ PANELİ (AKILLI VİRGÜL AYRIŞTIRICILI)
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
         st.subheader("📝 Hızlı Veri Giriş Terminali")
@@ -762,29 +769,56 @@ else:
             gercek_ogrenciler = pd.read_sql_query("SELECT ogrenci_no AS \"Ogrenci_No\", ad_soyad AS \"Ad_Soyad\" FROM ogrenciler WHERE modul=%s AND sube=%s", conn, params=(ilgili_modul, secilen_sube))
             df_giris = gercek_ogrenciler.copy() if not gercek_ogrenciler.empty else pd.DataFrame(columns=["Ogrenci_No", "Ad_Soyad"])
             df_giris.insert(2, "Sınava Girdi", True)
-            for _, row in rubrik_df.iterrows(): df_giris[f"{row['ana_bolum']} - {row['alt_bolum']}"] = 0.0 
             df_giris["Sınav Notu"] = 0.0 
+        
+        # GÜNCELLEME: Tüm eski sayısal notları string(metin) yapıp noktaları virgüle çevirerek hocanın önüne Türk standartında sunuyoruz
+        for _, row in rubrik_df.iterrows():
+            col_name = f"{row['ana_bolum']} - {row['alt_bolum']}"
+            if col_name not in df_giris.columns:
+                df_giris[col_name] = ""
+            else:
+                df_giris[col_name] = df_giris[col_name].apply(lambda x: str(x).replace(".", ",") if pd.notnull(x) else "")
             
+        # GÜNCELLEME: Sistem artık sayıyı zorlamıyor (NumberColumn yerine TextColumn), Excel'den gelen virgüllü metinleri rahatça kabul ediyor
         col_conf = {"Sınav Notu": st.column_config.NumberColumn("Sınav Notu", disabled=True), "Sınava Girdi": st.column_config.CheckboxColumn("Sınava Girdi", default=True)}
+        for _, row in rubrik_df.iterrows():
+            c_name = f"{row['ana_bolum']} - {row['alt_bolum']}"
+            col_conf[c_name] = st.column_config.TextColumn(c_name)
+            
         girilen_notlar_df = st.data_editor(df_giris, num_rows="dynamic", use_container_width=True, column_config=col_conf, disabled=is_locked)
         
         if not is_locked and st.button("💾 Notları Buluta Kaydet", type="primary"):
             hatalar = []
             max_puan_sozlugu = {f"{r['ana_bolum']} - {r['alt_bolum']}": float(r['max_puan']) for _, r in rubrik_df.iterrows()}
-            for idx, row in girilen_notlar_df.iterrows():
+            df_to_save = girilen_notlar_df.copy()
+            
+            for idx, row in df_to_save.iterrows():
                 if row.get("Sınava Girdi", True):
+                    ogrenci_toplam = 0.0
                     for col, m_puan in max_puan_sozlugu.items():
-                        val = pd.to_numeric(row.get(col), errors='coerce')
-                        if pd.notnull(val) and val > m_puan: hatalar.append(f"**{row.get('Ogrenci_No', '')}**: '{col}' notu ({val}), max ({m_puan}) aşıyor!")
+                        # GÜNCELLEME: İster virgüllü, ister noktalı, ister boş yapıştırılsın hepsini sistem okuyabilecek hale getirir
+                        raw_val = str(row.get(col, "0")).replace(",", ".")
+                        if raw_val.strip() == "" or raw_val.strip() == "nan": raw_val = "0"
+                        val = pd.to_numeric(raw_val, errors='coerce')
+                        
+                        if pd.notnull(val):
+                            if val > m_puan: hatalar.append(f"**{row.get('Ogrenci_No', '')}**: '{col}' notu ({val}), max ({m_puan}) aşıyor!")
+                            df_to_save.at[idx, col] = val
+                            ogrenci_toplam += val
+                        else:
+                            df_to_save.at[idx, col] = 0.0
+                    df_to_save.at[idx, "Sınav Notu"] = round(ogrenci_toplam, 2)
+                else:
+                    for col in max_puan_sozlugu.keys(): df_to_save.at[idx, col] = 0.0
+                    df_to_save.at[idx, "Sınav Notu"] = 0.0
+                    
             if hatalar: st.error("🛑 HATA!"); [st.warning(h) for h in hatalar]; st.stop()
             
-            toplam_notlar = []
-            for idx, row in girilen_notlar_df.iterrows():
-                if row.get("Sınava Girdi", True): ogrenci_toplam = sum([pd.to_numeric(row.get(col), errors='coerce') for col in max_puan_sozlugu.keys() if pd.notnull(pd.to_numeric(row.get(col), errors='coerce'))])
-                else: ogrenci_toplam = 0.0
-                toplam_notlar.append(round(ogrenci_toplam, 2))
+            # GÜNCELLEME: Tüm metinleri (virgülleri) sistem matematiğine uyacak şekilde ondalıklı sayı olarak veritabanına işliyor
+            for col in max_puan_sozlugu.keys():
+                df_to_save[col] = df_to_save[col].astype(float)
+            df_to_save["Sınav Notu"] = df_to_save["Sınav Notu"].astype(float)
                 
-            girilen_notlar_df["Sınav Notu"] = toplam_notlar
-            cur.execute("""INSERT INTO notlar (sinav_kodu, sube, veri_json) VALUES (%s, %s, %s) ON CONFLICT (sinav_kodu, sube) DO UPDATE SET veri_json = EXCLUDED.veri_json;""", (secilen_islem_sinavi, secilen_sube, girilen_notlar_df.to_json(orient="records")))
+            cur.execute("""INSERT INTO notlar (sinav_kodu, sube, veri_json) VALUES (%s, %s, %s) ON CONFLICT (sinav_kodu, sube) DO UPDATE SET veri_json = EXCLUDED.veri_json;""", (secilen_islem_sinavi, secilen_sube, df_to_save.to_json(orient="records")))
             conn.commit(); cur.close(); conn.close()
             st.success("Notlar bulut veritabanına başarıyla kaydedildi!"); st.rerun()
