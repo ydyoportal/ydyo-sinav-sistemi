@@ -12,7 +12,6 @@ from reportlab.lib import colors
 
 st.set_page_config(page_title="KTO Karatay YDY Portalı", page_icon="🔐", layout="wide")
 
-# GÜVENLİK: Şifreler ve bağlantı adresi sadece Streamlit Secrets üzerinden çekilir
 def hash_sifre(sifre: str) -> str:
     if not sifre: return ""
     if len(sifre) == 64 and all(c in '0123456789abcdefABCDEF' for c in sifre): return sifre
@@ -268,11 +267,9 @@ else:
 
             ANA_BOLUMLER = ["Listening I", "Listening II", "Reading I", "Reading II", "Grammar", "Functional Language", "Use of English", "Vocabulary", "Speaking", "Speaking 1st", "Speaking 2nd", "Speaking 3rd", "Writing", "Writing (1. Okuma)", "Writing (2. Okuma)", "Writing (3. Okuma)"]
             
-            # GÜNCELLEME: Varsayılan değer "15,0" (string) yapılarak virgüllü sisteme uyarlandı
             if 'taslak_df' not in st.session_state:
                 st.session_state['taslak_df'] = pd.DataFrame({"Ana Bölüm": ["Grammar"], "Alt Bölüm (Part)": ["Part A"], "Ölçülen Kazanımlar": ["Present Simple"], "Max Puan": ["15,0"]})
             
-            # GÜNCELLEME: TextColumn kullanılarak hocaların hem virgül hem nokta girebilmesi sağlandı
             duzenlenen_rubrik = st.data_editor(
                 st.session_state['taslak_df'], 
                 num_rows="dynamic", 
@@ -292,7 +289,6 @@ else:
                     cur.execute("INSERT INTO sinavlar (sinav_kodu, kilitli) VALUES (%s, FALSE)", (sinav_kodu,))
                     cur.execute("INSERT INTO sinav_ayarlari (sinav_kodu, tolerans) VALUES (%s, %s)", (sinav_kodu, tolerans_baremi))
                     for _, row in duzenlenen_rubrik.iterrows():
-                        # GÜNCELLEME: Virgülleri noktaya çevirip buluta ondalıklı sayı olarak kaydeder
                         saf_max = float(str(row['Max Puan']).replace(',', '.'))
                         cur.execute("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan) VALUES (%s, %s, %s, %s, %s)", (sinav_kodu, row['Ana Bölüm'], row['Alt Bölüm (Part)'], row['Ölçülen Kazanımlar'], saf_max))
                     conn.commit()
@@ -332,7 +328,6 @@ else:
                 yeni_tolerans = st.number_input("Güncel Çift Okuma Tolerans Farkı", min_value=0, value=mevcut_tolerans)
                 df_mevcut_tos = pd.read_sql_query("SELECT ana_bolum AS \"Ana Bölüm\", alt_bolum AS \"Alt Bölüm (Part)\", kazanimlar AS \"Ölçülen Kazanımlar\", max_puan AS \"Max Puan\" FROM sinav_tos WHERE sinav_kodu=%s", conn, params=(duzenlenecek_sinav,))
                 
-                # GÜNCELLEME: Düzenleme sayfasında da noktaları virgüle çevirerek metin halinde sunar
                 df_mevcut_tos["Max Puan"] = df_mevcut_tos["Max Puan"].astype(str).str.replace(".", ",")
                 
                 st.markdown("**Güncel Belirtke Tablosu (ToS):**")
@@ -722,7 +717,7 @@ else:
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ (AKILLI VİRGÜL AYRIŞTIRICILI)
+    # 5. HOCA VERİ GİRİŞ PANELİ 
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
         st.subheader("📝 Hızlı Veri Giriş Terminali")
@@ -771,7 +766,6 @@ else:
             df_giris.insert(2, "Sınava Girdi", True)
             df_giris["Sınav Notu"] = 0.0 
         
-        # GÜNCELLEME: Tüm eski sayısal notları string(metin) yapıp noktaları virgüle çevirerek hocanın önüne Türk standartında sunuyoruz
         for _, row in rubrik_df.iterrows():
             col_name = f"{row['ana_bolum']} - {row['alt_bolum']}"
             if col_name not in df_giris.columns:
@@ -779,7 +773,6 @@ else:
             else:
                 df_giris[col_name] = df_giris[col_name].apply(lambda x: str(x).replace(".", ",") if pd.notnull(x) else "")
             
-        # GÜNCELLEME: Sistem artık sayıyı zorlamıyor (NumberColumn yerine TextColumn), Excel'den gelen virgüllü metinleri rahatça kabul ediyor
         col_conf = {"Sınav Notu": st.column_config.NumberColumn("Sınav Notu", disabled=True), "Sınava Girdi": st.column_config.CheckboxColumn("Sınava Girdi", default=True)}
         for _, row in rubrik_df.iterrows():
             c_name = f"{row['ana_bolum']} - {row['alt_bolum']}"
@@ -796,7 +789,6 @@ else:
                 if row.get("Sınava Girdi", True):
                     ogrenci_toplam = 0.0
                     for col, m_puan in max_puan_sozlugu.items():
-                        # GÜNCELLEME: İster virgüllü, ister noktalı, ister boş yapıştırılsın hepsini sistem okuyabilecek hale getirir
                         raw_val = str(row.get(col, "0")).replace(",", ".")
                         if raw_val.strip() == "" or raw_val.strip() == "nan": raw_val = "0"
                         val = pd.to_numeric(raw_val, errors='coerce')
@@ -814,7 +806,6 @@ else:
                     
             if hatalar: st.error("🛑 HATA!"); [st.warning(h) for h in hatalar]; st.stop()
             
-            # GÜNCELLEME: Tüm metinleri (virgülleri) sistem matematiğine uyacak şekilde ondalıklı sayı olarak veritabanına işliyor
             for col in max_puan_sozlugu.keys():
                 df_to_save[col] = df_to_save[col].astype(float)
             df_to_save["Sınav Notu"] = df_to_save["Sınav Notu"].astype(float)
