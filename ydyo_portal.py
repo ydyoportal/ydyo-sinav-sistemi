@@ -758,7 +758,7 @@ else:
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ (A VE B KİTAPÇIĞI AKILLI GÖRÜNÜM)
+    # 5. HOCA VERİ GİRİŞ PANELİ (İKİ AŞAMALI: YOKLAMA VE NOT GİRİŞİ)
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
         st.subheader("📝 Hızlı Veri Giriş Terminali")
@@ -798,8 +798,7 @@ else:
         except:
             rubrik_df = pd.read_sql_query("SELECT ana_bolum, alt_bolum, max_puan FROM sinav_tos WHERE sinav_kodu=%s", conn, params=(secilen_islem_sinavi,))
             rubrik_df['b_grubu_karsiligi'] = ""
-        
-        # GÜNCELLEME: A ve B haritalaması yapılıyor
+            
         b_map = {}
         reverse_b_map = {}
         for _, row in rubrik_df.iterrows():
@@ -813,7 +812,7 @@ else:
                 b_map[a_name] = a_name
                 reverse_b_map[a_name] = a_name
 
-        st.markdown(f"### 📊 {secilen_sube} - Not Tablosu")
+        st.markdown(f"### 📊 {secilen_sube} - Veri Giriş Paneli")
         cur.execute("SELECT veri_json FROM notlar WHERE sinav_kodu=%s AND sube=%s", (secilen_islem_sinavi, secilen_sube))
         kaydedilmis_veri = cur.fetchone()
         
@@ -834,123 +833,148 @@ else:
                 df_giris[col_name] = ""
             else:
                 df_giris[col_name] = df_giris[col_name].apply(lambda x: str(x).replace(".", ",") if pd.notnull(x) else "")
-            
-        # GÜNCELLEME: Akıllı Kitapçık Görünümü Filtresi
-        gorunum = st.radio("Veri Giriş Modu (Excel'deki sıralamanıza göre seçin):", ["👥 Tüm Sınıf (Karma)", "📘 Sadece A Kitapçığı", "📕 Sadece B Kitapçığı"], horizontal=True)
-        
-        df_view = df_giris.copy()
-        
-        if "A Kitapçığı" in gorunum:
-            df_view = df_view[df_view["Kitapçık"] == "A"].copy()
-            base_cols = ["Ogrenci_No", "Ad_Soyad", "Sınava Girdi", "Kitapçık", "Sınav Notu"]
-            skill_cols = [c for c in df_view.columns if c not in base_cols]
-            df_view = df_view[base_cols + skill_cols]
-            
-        elif "B Kitapçığı" in gorunum:
-            df_view = df_view[df_view["Kitapçık"] == "B"].copy()
-            # B'nin kağıt sıralamasına göre sütun isimlerini değiştir
-            df_view = df_view.rename(columns=b_map)
-            # Sütunları B'nin fiziksel (alfabetik Part A, Part B) sırasına sok
-            base_cols = ["Ogrenci_No", "Ad_Soyad", "Sınava Girdi", "Kitapçık", "Sınav Notu"]
-            skill_cols = sorted([c for c in df_view.columns if c not in base_cols])
-            df_view = df_view[base_cols + skill_cols]
-        
-        col_conf = {
-            "Sınav Notu": st.column_config.NumberColumn("Sınav Notu", disabled=True), 
-            "Sınava Girdi": st.column_config.CheckboxColumn("Sınava Girdi", default=True),
-            "Kitapçık": st.column_config.SelectboxColumn("Kitapçık", options=["A", "B", "C", "D"])
-        }
-        
-        for c in df_view.columns:
-            if c not in ["Ogrenci_No", "Ad_Soyad", "Sınava Girdi", "Kitapçık", "Sınav Notu"]:
-                col_conf[c] = st.column_config.TextColumn(c)
-            
-        with st.form("hoca_veri_giris_formu"):
-            girilen_notlar_df = st.data_editor(df_view, num_rows="dynamic", use_container_width=True, column_config=col_conf, disabled=is_locked)
-            kaydet_btn = st.form_submit_button("💾 Notları Buluta Kaydet", type="primary", disabled=is_locked)
-            
-        if kaydet_btn and not is_locked:
-            hatalar = []
-            max_puan_sozlugu = {f"{r['ana_bolum']} - {r['alt_bolum']}": float(r['max_puan']) for _, r in rubrik_df.iterrows()}
-            
-            # Eğer B modunda girildiyse, kaydetmeden önce sütunları tekrar asıl veritabanı (A) formatına geri çevir
-            if "B Kitapçığı" in gorunum:
-                girilen_notlar_df = girilen_notlar_df.rename(columns=reverse_b_map)
                 
-            df_to_save = df_giris.copy()
-            # Sadece ekranda üzerinde değişiklik yapılan satırları ana tabloya uygular
-            df_to_save.update(girilen_notlar_df)
+        # GÜNCELLEME: Sekmeli (Tab) Mimari Başlıyor
+        tab_yoklama, tab_notlar = st.tabs(["📍 1. Aşama: Yoklama ve Kitapçık Seçimi", "✍️ 2. Aşama: Not Girişi (A/B Görünümlü)"])
+        
+        with tab_yoklama:
+            st.info("Lütfen 2. Aşamaya geçmeden önce sınıftaki öğrencilerin yoklamasını alın ve dağıtılan kitapçık (A/B/C/D) türlerini belirleyip KAYDET butonuna basın.")
+            with st.form("form_yoklama"):
+                yoklama_cols = ["Ogrenci_No", "Ad_Soyad", "Sınava Girdi", "Kitapçık"]
+                col_conf_yok = {
+                    "Ogrenci_No": st.column_config.TextColumn("Öğrenci No", disabled=True),
+                    "Ad_Soyad": st.column_config.TextColumn("Ad Soyad", disabled=True),
+                    "Sınava Girdi": st.column_config.CheckboxColumn("Sınava Girdi"),
+                    "Kitapçık": st.column_config.SelectboxColumn("Kitapçık", options=["A", "B", "C", "D"])
+                }
+                
+                y_df = st.data_editor(df_giris, column_order=yoklama_cols, column_config=col_conf_yok, use_container_width=True, disabled=is_locked)
+                
+                if st.form_submit_button("💾 1. Aşamayı Kaydet (Yoklama ve Kitapçıklar)", type="primary", disabled=is_locked):
+                    df_to_save = df_giris.copy()
+                    df_to_save["Sınava Girdi"] = y_df["Sınava Girdi"]
+                    df_to_save["Kitapçık"] = y_df["Kitapçık"]
+                    cur.execute("""INSERT INTO notlar (sinav_kodu, sube, veri_json) VALUES (%s, %s, %s) ON CONFLICT (sinav_kodu, sube) DO UPDATE SET veri_json = EXCLUDED.veri_json;""", (secilen_islem_sinavi, secilen_sube, df_to_save.to_json(orient="records")))
+                    conn.commit()
+                    st.success("Kitapçık eşleştirmeleri kaydedildi! Artık yukarıdan 2. Aşama (Not Girişi) sekmesine geçebilirsiniz.")
+                    st.rerun()
+
+        with tab_notlar:
+            gorunum = st.radio("Not Giriş Modu (Excel'deki sıralamanıza göre seçin):", ["👥 Tüm Sınıf (Karma Görünüm)", "📘 Sadece A Kitapçığı Alanlar", "📕 Sadece B Kitapçığı Alanlar"], horizontal=True)
+            df_view = df_giris.copy()
             
-            cur.execute("SELECT tolerans FROM sinav_ayarlari WHERE sinav_kodu=%s", (secilen_islem_sinavi,))
-            tol_res = cur.fetchone()
-            tolerans = int(tol_res[0]) if (tol_res and tol_res[0] is not None) else 6
+            if "A Kitapçığı" in gorunum:
+                df_view = df_view[df_view["Kitapçık"] == "A"].copy()
+                base_cols = ["Ogrenci_No", "Ad_Soyad", "Sınava Girdi", "Kitapçık", "Sınav Notu"]
+                skill_cols = [c for c in df_view.columns if c not in base_cols]
+                df_view = df_view[base_cols + skill_cols]
+                
+            elif "B Kitapçığı" in gorunum:
+                df_view = df_view[df_view["Kitapçık"] == "B"].copy()
+                df_view = df_view.rename(columns=b_map)
+                base_cols = ["Ogrenci_No", "Ad_Soyad", "Sınava Girdi", "Kitapçık", "Sınav Notu"]
+                skill_cols = sorted([c for c in df_view.columns if c not in base_cols])
+                df_view = df_view[base_cols + skill_cols]
             
-            cift_okumalar = []
-            for c in max_puan_sozlugu.keys():
-                if "(1. Okuma)" in c:
-                    c2 = c.replace("(1. Okuma)", "(2. Okuma)")
-                    c3 = c.replace("(1. Okuma)", "(3. Okuma)")
-                    cift_okumalar.append((c, c2, c3))
-                elif "1st" in c:
-                    c2 = c.replace("1st", "2nd")
-                    c3 = c.replace("1st", "3rd")
-                    cift_okumalar.append((c, c2, c3))
+            if df_view.empty:
+                st.warning("⚠️ Seçtiğiniz filtreye uygun öğrenci bulunamadı. Lütfen önce 1. Aşamadan öğrencilere o kitapçığı atayıp atamadığınızı kontrol edin.")
+            else:
+                col_conf_not = {
+                    "Ogrenci_No": st.column_config.TextColumn("Öğrenci No", disabled=True),
+                    "Ad_Soyad": st.column_config.TextColumn("Ad Soyad", disabled=True),
+                    "Sınava Girdi": st.column_config.CheckboxColumn("Sınava Girdi", disabled=True),
+                    "Kitapçık": st.column_config.TextColumn("Kitapçık", disabled=True),
+                    "Sınav Notu": st.column_config.NumberColumn("Sınav Notu", disabled=True)
+                }
+                
+                for c in df_view.columns:
+                    if c not in ["Ogrenci_No", "Ad_Soyad", "Sınava Girdi", "Kitapçık", "Sınav Notu"]:
+                        col_conf_not[c] = st.column_config.TextColumn(c)
+                
+                with st.form("hoca_veri_giris_formu"):
+                    girilen_notlar_df = st.data_editor(df_view, num_rows="dynamic", use_container_width=True, column_config=col_conf_not, disabled=is_locked)
+                    kaydet_btn = st.form_submit_button("💾 Notları Buluta Kaydet", type="primary", disabled=is_locked)
                     
-            processed_cols = set()
-            for c1, c2, c3 in cift_okumalar:
-                if c1 in max_puan_sozlugu and c2 in max_puan_sozlugu:
-                    processed_cols.update([c1, c2])
-                    if c3 in max_puan_sozlugu: processed_cols.add(c3)
-            
-            for col in max_puan_sozlugu.keys():
-                df_to_save[col] = pd.to_numeric(df_to_save[col].astype(str).str.replace(',', '.').replace(['', 'nan', 'None'], '0'), errors='coerce').fillna(0.0)
-            
-            df_to_save["Sınav Notu"] = 0.0
-            
-            for idx, row in df_to_save.iterrows():
-                if row.get("Sınava Girdi", True):
-                    ogrenci_toplam = 0.0
+                if kaydet_btn and not is_locked:
+                    hatalar = []
+                    max_puan_sozlugu = {f"{r['ana_bolum']} - {r['alt_bolum']}": float(r['max_puan']) for _, r in rubrik_df.iterrows()}
                     
-                    for c, m_puan in max_puan_sozlugu.items():
-                        val = df_to_save.at[idx, c]
-                        if val > m_puan: hatalar.append(f"**{row.get('Ogrenci_No', '')}**: '{c}' notu ({val}), max ({m_puan}) aşıyor!")
+                    if "B Kitapçığı" in gorunum:
+                        girilen_notlar_df = girilen_notlar_df.rename(columns=reverse_b_map)
                         
+                    df_to_save = df_giris.copy()
+                    df_to_save.update(girilen_notlar_df)
+                    
+                    cur.execute("SELECT tolerans FROM sinav_ayarlari WHERE sinav_kodu=%s", (secilen_islem_sinavi,))
+                    tol_res = cur.fetchone()
+                    tolerans = int(tol_res[0]) if (tol_res and tol_res[0] is not None) else 6
+                    
+                    cift_okumalar = []
+                    for c in max_puan_sozlugu.keys():
+                        if "(1. Okuma)" in c:
+                            c2 = c.replace("(1. Okuma)", "(2. Okuma)")
+                            c3 = c.replace("(1. Okuma)", "(3. Okuma)")
+                            cift_okumalar.append((c, c2, c3))
+                        elif "1st" in c:
+                            c2 = c.replace("1st", "2nd")
+                            c3 = c.replace("1st", "3rd")
+                            cift_okumalar.append((c, c2, c3))
+                            
+                    processed_cols = set()
                     for c1, c2, c3 in cift_okumalar:
                         if c1 in max_puan_sozlugu and c2 in max_puan_sozlugu:
-                            v1 = df_to_save.at[idx, c1]
-                            v2 = df_to_save.at[idx, c2]
-                            
-                            v3_raw = str(girilen_notlar_df.at[idx, c3]).strip() if c3 in max_puan_sozlugu else ""
-                            has_v3 = v3_raw not in ["", "nan", "None"]
-                            v3 = df_to_save.at[idx, c3] if c3 in max_puan_sozlugu else 0.0
-                            
-                            if abs(v1 - v2) > tolerans:
-                                if not has_v3 and c3 in max_puan_sozlugu:
-                                    hatalar.append(f"**{row.get('Ogrenci_No', '')}**: {c1.split('(')[0].strip()} okumalar arası fark ({abs(v1-v2)}), {tolerans} puanlık toleransı aşıyor! 3. Okuma girilmelidir.")
-                                elif has_v3:
-                                    diff1 = abs(v3 - v1)
-                                    diff2 = abs(v3 - v2)
-                                    if diff1 < diff2:
-                                        ogrenci_toplam += (v3 + v1) / 2.0
-                                    elif diff2 < diff1:
-                                        ogrenci_toplam += (v3 + v2) / 2.0
-                                    else:
-                                        ogrenci_toplam += (v3 + max(v1, v2)) / 2.0
-                            else:
-                                ogrenci_toplam += (v1 + v2) / 2.0
-                                
-                    for c in max_puan_sozlugu.keys():
-                        if c not in processed_cols:
-                            ogrenci_toplam += df_to_save.at[idx, c]
-                            
-                    df_to_save.at[idx, "Sınav Notu"] = round(ogrenci_toplam, 2)
-                else:
-                    for col in max_puan_sozlugu.keys(): df_to_save.at[idx, col] = 0.0
-                    df_to_save.at[idx, "Sınav Notu"] = 0.0
+                            processed_cols.update([c1, c2])
+                            if c3 in max_puan_sozlugu: processed_cols.add(c3)
                     
-            if hatalar: st.error("🛑 SİSTEM KAYDI DURDURDU: KURALLAR İHLAL EDİLDİ!"); [st.warning(h) for h in hatalar]; st.stop()
-                
-            cur.execute("""INSERT INTO notlar (sinav_kodu, sube, veri_json) VALUES (%s, %s, %s) ON CONFLICT (sinav_kodu, sube) DO UPDATE SET veri_json = EXCLUDED.veri_json;""", (secilen_islem_sinavi, secilen_sube, df_to_save.to_json(orient="records")))
-            conn.commit(); cur.close(); conn.close()
-            st.success("Notlar bulut veritabanına başarıyla kaydedildi!")
-            st.rerun()
+                    for col in max_puan_sozlugu.keys():
+                        df_to_save[col] = pd.to_numeric(df_to_save[col].astype(str).str.replace(',', '.').replace(['', 'nan', 'None'], '0'), errors='coerce').fillna(0.0)
+                    
+                    df_to_save["Sınav Notu"] = 0.0
+                    
+                    for idx, row in df_to_save.iterrows():
+                        if row.get("Sınava Girdi", True):
+                            ogrenci_toplam = 0.0
+                            
+                            for c, m_puan in max_puan_sozlugu.items():
+                                val = df_to_save.at[idx, c]
+                                if val > m_puan: hatalar.append(f"**{row.get('Ogrenci_No', '')}**: '{c}' notu ({val}), max ({m_puan}) aşıyor!")
+                                
+                            for c1, c2, c3 in cift_okumalar:
+                                if c1 in max_puan_sozlugu and c2 in max_puan_sozlugu:
+                                    v1 = df_to_save.at[idx, c1]
+                                    v2 = df_to_save.at[idx, c2]
+                                    
+                                    v3_raw = str(girilen_notlar_df.at[idx, c3]).strip() if c3 in max_puan_sozlugu else ""
+                                    has_v3 = v3_raw not in ["", "nan", "None"]
+                                    v3 = df_to_save.at[idx, c3] if c3 in max_puan_sozlugu else 0.0
+                                    
+                                    if abs(v1 - v2) > tolerans:
+                                        if not has_v3 and c3 in max_puan_sozlugu:
+                                            hatalar.append(f"**{row.get('Ogrenci_No', '')}**: {c1.split('(')[0].strip()} okumalar arası fark ({abs(v1-v2)}), {tolerans} puanlık toleransı aşıyor! 3. Okuma girilmelidir.")
+                                        elif has_v3:
+                                            diff1 = abs(v3 - v1)
+                                            diff2 = abs(v3 - v2)
+                                            if diff1 < diff2:
+                                                ogrenci_toplam += (v3 + v1) / 2.0
+                                            elif diff2 < diff1:
+                                                ogrenci_toplam += (v3 + v2) / 2.0
+                                            else:
+                                                ogrenci_toplam += (v3 + max(v1, v2)) / 2.0
+                                    else:
+                                        ogrenci_toplam += (v1 + v2) / 2.0
+                                        
+                            for c in max_puan_sozlugu.keys():
+                                if c not in processed_cols:
+                                    ogrenci_toplam += df_to_save.at[idx, c]
+                                    
+                            df_to_save.at[idx, "Sınav Notu"] = round(ogrenci_toplam, 2)
+                        else:
+                            for col in max_puan_sozlugu.keys(): df_to_save.at[idx, col] = 0.0
+                            df_to_save.at[idx, "Sınav Notu"] = 0.0
+                            
+                    if hatalar: st.error("🛑 SİSTEM KAYDI DURDURDU: KURALLAR İHLAL EDİLDİ!"); [st.warning(h) for h in hatalar]; st.stop()
+                        
+                    cur.execute("""INSERT INTO notlar (sinav_kodu, sube, veri_json) VALUES (%s, %s, %s) ON CONFLICT (sinav_kodu, sube) DO UPDATE SET veri_json = EXCLUDED.veri_json;""", (secilen_islem_sinavi, secilen_sube, df_to_save.to_json(orient="records")))
+                    conn.commit(); cur.close(); conn.close()
+                    st.success("Notlar bulut veritabanına başarıyla kaydedildi!")
+                    st.rerun()
