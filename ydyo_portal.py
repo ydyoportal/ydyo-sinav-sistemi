@@ -29,7 +29,6 @@ def check_and_update_schema():
         conn = get_db_connection()
         cur = conn.cursor()
         cur.execute("ALTER TABLE sinav_tos ADD COLUMN IF NOT EXISTS b_grubu_karsiligi TEXT DEFAULT '';")
-        # GÜNCELLEME: Tek / Çoklu kitapçık tercihini tutacak yeni veritabanı ayar sütunu
         cur.execute("ALTER TABLE sinav_ayarlari ADD COLUMN IF NOT EXISTS kitapcik_turu TEXT DEFAULT 'Çoklu Kitapçık (A ve B)';")
         conn.commit()
         cur.close(); conn.close()
@@ -271,7 +270,6 @@ else:
             with c3: secilen_tur = st.selectbox("Sınav Türü", ["Quiz_1", "Quiz_2", "Midterm", "Final"])
             with c4: tolerans_baremi = st.number_input("Çift Okuma Tolerans Farkı", min_value=0, value=6)
             
-            # GÜNCELLEME: Kitapçık Türü Seçimi Eklendi
             st.markdown("---")
             kitapcik_turu = st.radio("Sınav Formatı (Kitapçık Yapısı)", ["Tek Kitapçık (Standart)", "Çoklu Kitapçık (A ve B)"], horizontal=True)
             sinav_kodu = f"{secilen_modul}_{secilen_kur}_{secilen_tur}"
@@ -303,11 +301,8 @@ else:
                 "Max Puan": st.column_config.TextColumn("Max Puan")
             }
             
-            # Seçime Göre B Sütununu Gizle veya Göster
-            if "Çoklu" in kitapcik_turu:
-                col_config_tos["B Kitapçığındaki Yeri (İsteğe Bağlı)"] = st.column_config.TextColumn("B Kitapçığındaki Yeri")
-            else:
-                col_config_tos["B Kitapçığındaki Yeri (İsteğe Bağlı)"] = None # UI'dan gizler
+            if "Çoklu" in kitapcik_turu: col_config_tos["B Kitapçığındaki Yeri (İsteğe Bağlı)"] = st.column_config.TextColumn("B Kitapçığındaki Yeri")
+            else: col_config_tos["B Kitapçığındaki Yeri (İsteğe Bağlı)"] = None 
 
             duzenlenen_rubrik = st.data_editor(st.session_state['taslak_df'], num_rows="dynamic", column_config=col_config_tos, use_container_width=True)
             
@@ -318,7 +313,6 @@ else:
                 if cur.fetchone(): st.warning("Bu sınav kodu zaten açık!")
                 else:
                     cur.execute("INSERT INTO sinavlar (sinav_kodu, kilitli) VALUES (%s, FALSE)", (sinav_kodu,))
-                    # Ayarlara kitapçık türü de kaydediliyor
                     cur.execute("INSERT INTO sinav_ayarlari (sinav_kodu, tolerans, kitapcik_turu) VALUES (%s, %s, %s)", (sinav_kodu, tolerans_baremi, kitapcik_turu))
                     
                     tos_data = []
@@ -379,10 +373,8 @@ else:
                     "Max Puan": st.column_config.TextColumn("Max Puan")
                 }
                 
-                if "Çoklu" in yeni_kturu:
-                    edit_col_config["B Kitapçığındaki Yeri (İsteğe Bağlı)"] = st.column_config.TextColumn("B Kitapçığındaki Yeri")
-                else:
-                    edit_col_config["B Kitapçığındaki Yeri (İsteğe Bağlı)"] = None
+                if "Çoklu" in yeni_kturu: edit_col_config["B Kitapçığındaki Yeri (İsteğe Bağlı)"] = st.column_config.TextColumn("B Kitapçığındaki Yeri")
+                else: edit_col_config["B Kitapçığındaki Yeri (İsteğe Bağlı)"] = None
 
                 st.markdown("**Güncel Belirtke Tablosu (ToS):**")
                 guncel_tos = st.data_editor(df_mevcut_tos, num_rows="dynamic", column_config=edit_col_config, use_container_width=True, key="edit_tos_editor")
@@ -868,10 +860,8 @@ else:
             else:
                 df_giris[col_name] = df_giris[col_name].apply(lambda x: str(x).replace(".", ",") if pd.notnull(x) else "")
         
-        # Sütun sırasını alfabetik değil, ToS'ta girildiği kağıt sırasına sabitler
         skill_cols_in_order = [f"{row['ana_bolum']} - {row['alt_bolum']}" for _, row in rubrik_df.iterrows()]
         
-        # GÜNCELLEME: Tek kitapçık ise sekmeleri sakla, dümdüz tablo göster
         if is_multi_booklet:
             tab_yoklama, tab_notlar = st.tabs(["📍 1. Aşama: Yoklama ve Kitapçık Seçimi", "✍️ 2. Aşama: Not Girişi (A/B Görünümlü)"])
             
@@ -941,25 +931,26 @@ else:
                         df_to_save = df_giris.copy()
                         df_to_save.update(girilen_notlar_df)
                         
+                        # GÜNCELLEME: İsimlere Takılmayan Zeki Çift Okuma Tespit Algoritması
                         cift_okumalar = []
-                        for c in max_puan_sozlugu.keys():
-                            if "(1. Okuma)" in c:
-                                c2 = c.replace("(1. Okuma)", "(2. Okuma)")
-                                c3 = c.replace("(1. Okuma)", "(3. Okuma)")
-                                cift_okumalar.append((c, c2, c3))
-                            elif "1st" in c:
-                                c2 = c.replace("1st", "2nd")
-                                c3 = c.replace("1st", "3rd")
-                                cift_okumalar.append((c, c2, c3))
+                        for c1 in max_puan_sozlugu.keys():
+                            if "(1. Okuma)" in c1 or "1st" in c1:
+                                ana_base = c1.split(" - ")[0].replace("(1. Okuma)", "").replace("1st", "").strip()
+                                c2, c3 = None, None
+                                for k in max_puan_sozlugu.keys():
+                                    if "(2. Okuma)" in k or "2nd" in k:
+                                        if k.split(" - ")[0].replace("(2. Okuma)", "").replace("2nd", "").strip() == ana_base: c2 = k
+                                    if "(3. Okuma)" in k or "3rd" in k:
+                                        if k.split(" - ")[0].replace("(3. Okuma)", "").replace("3rd", "").strip() == ana_base: c3 = k
+                                if c2: cift_okumalar.append((c1, c2, c3))
                                 
                         processed_cols = set()
                         for c1, c2, c3 in cift_okumalar:
-                            if c1 in max_puan_sozlugu and c2 in max_puan_sozlugu:
-                                processed_cols.update([c1, c2])
-                                if c3 in max_puan_sozlugu: processed_cols.add(c3)
+                            processed_cols.update([c1, c2])
+                            if c3: processed_cols.add(c3)
                         
                         for col in max_puan_sozlugu.keys():
-                            df_to_save[col] = pd.to_numeric(df_to_save[col].astype(str).str.replace(',', '.').replace(['', 'nan', 'None'], '0'), errors='coerce').fillna(0.0)
+                            df_to_save[col] = pd.to_numeric(df_to_save[col].astype(str).str.replace(',', '.').replace(['', 'nan', 'None', '<NA>'], '0'), errors='coerce').fillna(0.0)
                         
                         df_to_save["Sınav Notu"] = 0.0
                         
@@ -976,9 +967,12 @@ else:
                                         v1 = df_to_save.at[idx, c1]
                                         v2 = df_to_save.at[idx, c2]
                                         
-                                        v3_raw = str(girilen_notlar_df.at[idx, c3]).strip() if c3 in max_puan_sozlugu else ""
-                                        has_v3 = v3_raw not in ["", "nan", "None"]
-                                        v3 = df_to_save.at[idx, c3] if c3 in max_puan_sozlugu else 0.0
+                                        has_v3 = False
+                                        v3 = 0.0
+                                        if c3:
+                                            v3_raw = str(girilen_notlar_df.at[idx, c3]).strip() if c3 in girilen_notlar_df.columns else ""
+                                            has_v3 = v3_raw not in ["", "nan", "None", "<NA>"]
+                                            v3 = df_to_save.at[idx, c3]
                                         
                                         if abs(v1 - v2) > tolerans:
                                             if not has_v3 and c3 in max_puan_sozlugu:
@@ -1039,25 +1033,26 @@ else:
                 df_to_save = df_giris.copy()
                 df_to_save.update(girilen_notlar_df)
                 
+                # GÜNCELLEME: İsimlere Takılmayan Zeki Çift Okuma Tespit Algoritması
                 cift_okumalar = []
-                for c in max_puan_sozlugu.keys():
-                    if "(1. Okuma)" in c:
-                        c2 = c.replace("(1. Okuma)", "(2. Okuma)")
-                        c3 = c.replace("(1. Okuma)", "(3. Okuma)")
-                        cift_okumalar.append((c, c2, c3))
-                    elif "1st" in c:
-                        c2 = c.replace("1st", "2nd")
-                        c3 = c.replace("1st", "3rd")
-                        cift_okumalar.append((c, c2, c3))
+                for c1 in max_puan_sozlugu.keys():
+                    if "(1. Okuma)" in c1 or "1st" in c1:
+                        ana_base = c1.split(" - ")[0].replace("(1. Okuma)", "").replace("1st", "").strip()
+                        c2, c3 = None, None
+                        for k in max_puan_sozlugu.keys():
+                            if "(2. Okuma)" in k or "2nd" in k:
+                                if k.split(" - ")[0].replace("(2. Okuma)", "").replace("2nd", "").strip() == ana_base: c2 = k
+                            if "(3. Okuma)" in k or "3rd" in k:
+                                if k.split(" - ")[0].replace("(3. Okuma)", "").replace("3rd", "").strip() == ana_base: c3 = k
+                        if c2: cift_okumalar.append((c1, c2, c3))
                         
                 processed_cols = set()
                 for c1, c2, c3 in cift_okumalar:
-                    if c1 in max_puan_sozlugu and c2 in max_puan_sozlugu:
-                        processed_cols.update([c1, c2])
-                        if c3 in max_puan_sozlugu: processed_cols.add(c3)
+                    processed_cols.update([c1, c2])
+                    if c3: processed_cols.add(c3)
                 
                 for col in max_puan_sozlugu.keys():
-                    df_to_save[col] = pd.to_numeric(df_to_save[col].astype(str).str.replace(',', '.').replace(['', 'nan', 'None'], '0'), errors='coerce').fillna(0.0)
+                    df_to_save[col] = pd.to_numeric(df_to_save[col].astype(str).str.replace(',', '.').replace(['', 'nan', 'None', '<NA>'], '0'), errors='coerce').fillna(0.0)
                 
                 df_to_save["Sınav Notu"] = 0.0
                 
@@ -1074,9 +1069,12 @@ else:
                                 v1 = df_to_save.at[idx, c1]
                                 v2 = df_to_save.at[idx, c2]
                                 
-                                v3_raw = str(girilen_notlar_df.at[idx, c3]).strip() if c3 in max_puan_sozlugu else ""
-                                has_v3 = v3_raw not in ["", "nan", "None"]
-                                v3 = df_to_save.at[idx, c3] if c3 in max_puan_sozlugu else 0.0
+                                has_v3 = False
+                                v3 = 0.0
+                                if c3:
+                                    v3_raw = str(girilen_notlar_df.at[idx, c3]).strip() if c3 in girilen_notlar_df.columns else ""
+                                    has_v3 = v3_raw not in ["", "nan", "None", "<NA>"]
+                                    v3 = df_to_save.at[idx, c3]
                                 
                                 if abs(v1 - v2) > tolerans:
                                     if not has_v3 and c3 in max_puan_sozlugu:
