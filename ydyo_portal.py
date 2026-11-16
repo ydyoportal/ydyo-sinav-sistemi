@@ -10,7 +10,81 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
-st.set_page_config(page_title="KTO Karatay YDY Portalı", page_icon="🔐", layout="wide")
+st.set_page_config(page_title="KTO Karatay YDY Portalı", page_icon="🎓", layout="wide")
+
+# ==========================================
+# KURUMSAL ARAYÜZ (UI) & TEMA AYARLARI
+# ==========================================
+def kurumsal_tema_uygula():
+    st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Jost:wght@400;500;600&display=swap');
+
+    /* Genel Font Ailesi - Sınav kitapçıklarıyla birebir uyum (DM Sans & Jost) */
+    html, body, [class*="css"] {
+        font-family: 'DM Sans', sans-serif !important;
+    }
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Jost', sans-serif !important;
+        color: #1A365D !important; /* KTO Karatay Laciverti */
+    }
+
+    /* Ana Arkaplan */
+    .stApp {
+        background-color: #F8F9FA;
+    }
+
+    /* Sidebar (Sol Menü) - KTO Laciverti */
+    [data-testid="stSidebar"] {
+        background-color: #1A365D;
+    }
+    [data-testid="stSidebar"] * {
+        color: #FFFFFF !important;
+    }
+
+    /* Birincil Butonlar (Primary) - KTO Turuncusu */
+    button[kind="primary"] {
+        background-color: #E84C0F !important;
+        border-color: #E84C0F !important;
+        color: white !important;
+        font-weight: 600 !important;
+        border-radius: 6px !important;
+        transition: all 0.3s ease;
+    }
+    button[kind="primary"]:hover {
+        background-color: #CC400A !important;
+        border-color: #CC400A !important;
+        transform: translateY(-2px);
+    }
+
+    /* İkincil Butonlar (Secondary) */
+    button[kind="secondary"] {
+        border-color: #1A365D !important;
+        color: #1A365D !important;
+        border-radius: 6px !important;
+    }
+    button[kind="secondary"]:hover {
+        border-color: #E84C0F !important;
+        color: #E84C0F !important;
+    }
+
+    /* Metrik Kartları (Rakamlar) */
+    [data-testid="stMetricValue"] {
+        color: #E84C0F !important; /* Turuncu Vurgu */
+        font-family: 'Jost', sans-serif !important;
+        font-weight: 600;
+    }
+
+    /* DataFrame Tabloları */
+    [data-testid="stDataFrame"] {
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+kurumsal_tema_uygula()
 
 def hash_sifre(sifre: str) -> str:
     if not sifre: return ""
@@ -81,10 +155,10 @@ class ModernBar(Flowable):
             self.canv.roundRect(0, 0, fill_width, self.height, 3, fill=1, stroke=0)
 
 styles = getSampleStyleSheet()
-header_style = ParagraphStyle('Header', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=14, textColor=colors.HexColor("#1A5276"), alignment=1, spaceAfter=5)
+header_style = ParagraphStyle('Header', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=14, textColor=colors.HexColor("#1A365D"), alignment=1, spaceAfter=5)
 sub_header_style = ParagraphStyle('SubHeader', parent=styles['Normal'], fontName='Helvetica', fontSize=10, textColor=colors.grey, alignment=1, spaceAfter=20)
 title_style = ParagraphStyle('ModernTitle', parent=styles['Title'], fontName='Helvetica-Bold', fontSize=16, textColor=colors.HexColor("#2C3E50"), spaceAfter=10)
-info_style = ParagraphStyle('Info', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor("#34495E"), spaceAfter=15)
+info_style = ParagraphStyle('Info', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor("#E84C0F"), spaceAfter=15)
 cell_style = ParagraphStyle('Cell', parent=styles['Normal'], fontName='Helvetica', fontSize=9, alignment=1)
 cell_style_left = ParagraphStyle('CellLeft', parent=styles['Normal'], fontName='Helvetica', fontSize=9, alignment=0)
 header_cell_style = ParagraphStyle('HeaderCell', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.whitesmoke, alignment=1)
@@ -108,7 +182,7 @@ def create_landscape_class_pdf(veri):
     kpi_data = [[Paragraph("Metric", header_cell_style), Paragraph("Value", header_cell_style)]]
     for _, row in kpi_df.iterrows(): kpi_data.append([Paragraph(tr_to_eng(str(row['Metric'])), cell_style_left), Paragraph(str(row['Value']), cell_style)])
     kpi_table = Table(kpi_data, colWidths=[120, 100])
-    kpi_table.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor("#2C3E50")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BOTTOMPADDING', (0,0), (-1,-1), 8), ('TOPPADDING', (0,0), (-1,-1), 8), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey), ('BACKGROUND', (0,1), (-1,-1), colors.HexColor("#F8F9F9"))]))
+    kpi_table.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1A365D")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BOTTOMPADDING', (0,0), (-1,-1), 8), ('TOPPADDING', (0,0), (-1,-1), 8), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey), ('BACKGROUND', (0,1), (-1,-1), colors.HexColor("#F8F9F9"))]))
     
     skills_data = [[Paragraph("Section / Part", header_cell_style), Paragraph("Objectives", header_cell_style), Paragraph("Avg", header_cell_style), Paragraph("Max", header_cell_style), Paragraph("Performance", header_cell_style)]]
     for b_dict in veri['beceri_listesi']:
@@ -116,7 +190,7 @@ def create_landscape_class_pdf(veri):
         skills_data.append([Paragraph(tr_to_eng(b_dict['isim']), cell_style_left), Paragraph(tr_to_eng(b_dict.get('kazanim', '')), cell_style_left), Paragraph(f"{b_dict['ort']:.1f}", cell_style), Paragraph(str(b_dict['max']), cell_style), bar])
     
     skill_table = Table(skills_data, colWidths=[110, 180, 40, 40, 140])
-    s_style = [('BACKGROUND', (0,0), (-1,0), colors.HexColor("#2C3E50")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey)]
+    s_style = [('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1A365D")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey)]
     for i in range(1, len(skills_data)):
         if i % 2 == 0: s_style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor("#F8F9F9")))
     skill_table.setStyle(TableStyle(s_style))
@@ -147,7 +221,7 @@ def create_landscape_class_pdf(veri):
             row_data.append(Paragraph(c_text, c_style))
         tablo_verisi.append(row_data)
     l_table = Table(tablo_verisi, colWidths=col_widths, repeatRows=1)
-    l_style = [('BACKGROUND', (0,0), (-1,0), colors.HexColor("#2C3E50")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey), ('BOTTOMPADDING', (0,0), (-1,0), 8), ('TOPPADDING', (0,0), (-1,0), 8)]
+    l_style = [('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1A365D")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey), ('BOTTOMPADDING', (0,0), (-1,0), 8), ('TOPPADDING', (0,0), (-1,0), 8)]
     for i in range(1, len(tablo_verisi)):
         if i % 2 == 0: l_style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor("#F8F9F9")))
     l_table.setStyle(TableStyle(l_style))
@@ -193,7 +267,7 @@ def create_modern_pdf(rapor_verileri):
                         row_data.append(Paragraph(tr_to_eng(str(cell_val)), c_style))
                     tablo_verisi.append(row_data)
                 tablo = Table(tablo_verisi, colWidths=col_widths, repeatRows=1)
-                t_style = [('BACKGROUND', (0,0), (-1,0), colors.HexColor("#283747")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey)]
+                t_style = [('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1A365D")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey)]
                 for i in range(1, len(tablo_verisi)):
                     if i % 2 == 0: t_style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor("#F8F9F9")))
                 tablo.setStyle(TableStyle(t_style))
@@ -223,11 +297,13 @@ def cikis_yap():
     st.rerun()
 
 if not st.session_state['giris_basarili']:
-    st.title("🔐 KTO Karatay YDY - Merkezi Giriş")
-    with st.form("giris_formu"):
-        k_adi = st.text_input("Kullanıcı Adı")
-        sifre = st.text_input("Şifre", type="password")
-        if st.form_submit_button("Sisteme Giriş Yap", type="primary"): giris_yap(k_adi, sifre)
+    st.markdown("<h1 style='text-align: center;'>KTO Karatay YDY - Merkezi Giriş</h1>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.form("giris_formu"):
+            k_adi = st.text_input("Kullanıcı Adı")
+            sifre = st.text_input("Şifre", type="password")
+            if st.form_submit_button("Sisteme Giriş Yap", type="primary", use_container_width=True): giris_yap(k_adi, sifre)
 else:
     st.sidebar.title(f"👤 {st.session_state['isim']}")
     st.sidebar.info(f"Yetki: {st.session_state['rol']}")
@@ -394,7 +470,6 @@ else:
                     conn.commit(); st.success(f"{duzenlenecek_sinav} başarıyla güncellendi!")
                 st.divider()
                 
-                # GÜNCELLEME: Şifre Korumalı Sınav Silme Paneli
                 st.markdown("### 🗑️ Sınav Silme (Çift Güvenlikli Kalkan)")
                 silinecek_sinav = st.selectbox("Silinecek Sınavı Seçin", df_sinav_durum['sinav_kodu'].tolist(), key="sil_sec")
                 silme_onay = st.checkbox("⚠️ Bu sınavı ve öğrencilere ait tüm not kayıtlarını kalıcı olarak silmeyi onaylıyorum.")
@@ -548,7 +623,6 @@ else:
             conn = get_db_connection()
             cur = conn.cursor()
             
-            # GÜNCELLEME: 1. Yeni Özellik - Canlı Eksik Not Radarı
             if rapor_kapsami == "📡 Canlı Sınav Takip Radarı":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
                 sinavlar = [r[0] for r in cur.fetchall()]
@@ -586,7 +660,6 @@ else:
                             col_bar.progress(yuzde, text=f"{okunan_ogrenci} / {toplam_ogrenci} Öğrenci Okundu (%{yuzde})")
                             st.write("")
 
-            # GÜNCELLEME: 2. Yeni Özellik - OBS Tek Tık Çıktısı
             elif rapor_kapsami == "📥 OBS Excel Çıktısı":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
                 sinavlar = [r[0] for r in cur.fetchall()]
@@ -876,7 +949,7 @@ else:
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ (GÖRSEL METRİKLER EKLENDİ)
+    # 5. HOCA VERİ GİRİŞ PANELİ
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
         st.subheader("📝 Hızlı Veri Giriş Terminali")
@@ -961,9 +1034,9 @@ else:
         
         skill_cols_in_order = [f"{row['ana_bolum']} - {row['alt_bolum']}" for _, row in rubrik_df.iterrows()]
         
-        # GÜNCELLEME: Hoca Ekranı Görsel İlerleme Çubuğu ve Metrikler
         total_ogr = len(df_giris)
         if total_ogr > 0:
+            df_giris["Sınav Notu"] = pd.to_numeric(df_giris["Sınav Notu"], errors='coerce').fillna(0.0)
             graded_ogr = (df_giris['Sınav Notu'] > 0).sum()
             tamamlanma_yuzdesi = min(int((graded_ogr / total_ogr) * 100), 100)
             st.progress(tamamlanma_yuzdesi, text=f"Sınıf Notlandırma İlerlemesi: %{tamamlanma_yuzdesi} ({graded_ogr} / {total_ogr} Öğrenci)")
@@ -1078,9 +1151,12 @@ else:
                                         v1 = df_to_save.at[idx, c1]
                                         v2 = df_to_save.at[idx, c2]
                                         
-                                        v3_raw = str(girilen_notlar_df.at[idx, c3]).strip() if c3 in max_puan_sozlugu else ""
-                                        has_v3 = v3_raw not in ["", "nan", "None", "<NA>"]
-                                        v3 = df_to_save.at[idx, c3] if c3 in max_puan_sozlugu else 0.0
+                                        has_v3 = False
+                                        v3 = 0.0
+                                        if c3:
+                                            v3_raw = str(girilen_notlar_df.at[idx, c3]).strip() if c3 in girilen_notlar_df.columns else ""
+                                            has_v3 = v3_raw not in ["", "nan", "None", "<NA>"]
+                                            v3 = df_to_save.at[idx, c3]
                                         
                                         if abs(v1 - v2) > tolerans:
                                             if not has_v3 and c3 in max_puan_sozlugu:
