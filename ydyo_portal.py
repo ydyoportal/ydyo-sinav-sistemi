@@ -281,20 +281,25 @@ else:
 
             ANA_BOLUMLER = ["Listening I", "Listening II", "Reading I", "Reading II", "Grammar", "Functional Language", "Use of English", "Vocabulary", "Speaking", "Speaking 1st", "Speaking 2nd", "Speaking 3rd", "Writing", "Writing (1. Okuma)", "Writing (2. Okuma)", "Writing (3. Okuma)"]
             
+            # GÜNCELLEME: A ve B haritalaması tam olarak buraya entegre edildi.
             if 'taslak_df' not in st.session_state:
                 st.session_state['taslak_df'] = pd.DataFrame({
                     "Ana Bölüm": ["Grammar"], 
-                    "Alt Bölüm (Tematik İsim)": ["Tenses"], 
+                    "Alt Bölüm (A Kitapçığı Yeri)": ["Part A"], 
+                    "B Kitapçığındaki Yeri (İsteğe Bağlı)": ["Part D"],
                     "Ölçülen Kazanımlar": ["Present Simple"], 
                     "Max Puan": ["15,0"]
                 })
+            
+            st.info("💡 **İpucu:** Sınavı sadece **A Kitapçığının** sıralamasına göre tanımlayın. Eğer bu bölüm B kitapçığında başka bir yerdeyse (Örn: Part D), yanındaki B sütununa yazmanız yeterlidir.")
             
             duzenlenen_rubrik = st.data_editor(
                 st.session_state['taslak_df'], 
                 num_rows="dynamic", 
                 column_config={
                     "Ana Bölüm": st.column_config.SelectboxColumn("Ana Bölüm", options=ANA_BOLUMLER, required=True),
-                    "Alt Bölüm (Tematik İsim)": st.column_config.TextColumn("Alt Bölüm (Tematik İsim)", required=True),
+                    "Alt Bölüm (A Kitapçığı Yeri)": st.column_config.TextColumn("A Kitapçığındaki Adı/Yeri", required=True),
+                    "B Kitapçığındaki Yeri (İsteğe Bağlı)": st.column_config.TextColumn("B Kitapçığındaki Adı/Yeri"),
                     "Max Puan": st.column_config.TextColumn("Max Puan")
                 }, 
                 use_container_width=True
@@ -312,10 +317,11 @@ else:
                     tos_data = []
                     for _, row in duzenlenen_rubrik.iterrows():
                         saf_max = float(str(row.get('Max Puan', '0')).replace(',', '.'))
-                        tos_data.append((sinav_kodu, row['Ana Bölüm'], row['Alt Bölüm (Tematik İsim)'], row['Ölçülen Kazanımlar'], saf_max))
+                        b_grubu = str(row.get('B Kitapçığındaki Yeri (İsteğe Bağlı)', '')).strip()
+                        tos_data.append((sinav_kodu, row['Ana Bölüm'], row['Alt Bölüm (A Kitapçığı Yeri)'], row['Ölçülen Kazanımlar'], saf_max, b_grubu))
                     
                     if tos_data:
-                        cur.executemany("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan) VALUES (%s, %s, %s, %s, %s)", tos_data)
+                        cur.executemany("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan, b_grubu_karsiligi) VALUES (%s, %s, %s, %s, %s, %s)", tos_data)
                     conn.commit()
                     st.success("Sınav başarıyla buluta kaydedildi!")
                 cur.close(); conn.close()
@@ -352,12 +358,11 @@ else:
                 mevcut_tolerans = int(tol_res[0]) if (tol_res and tol_res[0] is not None) else 6
                 yeni_tolerans = st.number_input("Güncel Çift Okuma Tolerans Farkı", min_value=0, value=mevcut_tolerans)
                 
-                df_mevcut_tos = pd.read_sql_query('SELECT ana_bolum AS "Ana Bölüm", alt_bolum AS "Alt Bölüm (Tematik İsim)", kazanimlar AS "Ölçülen Kazanımlar", max_puan AS "Max Puan" FROM sinav_tos WHERE sinav_kodu=%s', conn, params=(duzenlenecek_sinav,))
+                df_mevcut_tos = pd.read_sql_query('SELECT ana_bolum AS "Ana Bölüm", alt_bolum AS "Alt Bölüm (A Kitapçığı Yeri)", b_grubu_karsiligi AS "B Kitapçığındaki Yeri (İsteğe Bağlı)", kazanimlar AS "Ölçülen Kazanımlar", max_puan AS "Max Puan" FROM sinav_tos WHERE sinav_kodu=%s', conn, params=(duzenlenecek_sinav,))
                 df_mevcut_tos["Max Puan"] = df_mevcut_tos["Max Puan"].astype(str).str.replace(".", ",")
                 
                 st.markdown("**Güncel Belirtke Tablosu (ToS):**")
                 guncel_tos = st.data_editor(df_mevcut_tos, num_rows="dynamic", column_config={"Ana Bölüm": st.column_config.SelectboxColumn("Ana Bölüm", options=ANA_BOLUMLER, required=True), "Max Puan": st.column_config.TextColumn("Max Puan")}, use_container_width=True, key="edit_tos_editor")
-                
                 if st.button("💾 Değişiklikleri Kaydet (Sınavı Güncelle)", type="primary"):
                     cur.execute("UPDATE sinav_ayarlari SET tolerans=%s WHERE sinav_kodu=%s", (yeni_tolerans, duzenlenecek_sinav))
                     cur.execute("DELETE FROM sinav_tos WHERE sinav_kodu=%s", (duzenlenecek_sinav,))
@@ -365,10 +370,11 @@ else:
                     tos_data = []
                     for _, row in guncel_tos.iterrows():
                         saf_max = float(str(row.get('Max Puan', '0')).replace(',', '.'))
-                        tos_data.append((duzenlenecek_sinav, row['Ana Bölüm'], row['Alt Bölüm (Tematik İsim)'], row['Ölçülen Kazanımlar'], saf_max))
+                        b_grubu = str(row.get('B Kitapçığındaki Yeri (İsteğe Bağlı)', '')).strip()
+                        tos_data.append((duzenlenecek_sinav, row['Ana Bölüm'], row['Alt Bölüm (A Kitapçığı Yeri)'], row['Ölçülen Kazanımlar'], saf_max, b_grubu))
                         
                     if tos_data:
-                        cur.executemany("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan) VALUES (%s, %s, %s, %s, %s)", tos_data)
+                        cur.executemany("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan, b_grubu_karsiligi) VALUES (%s, %s, %s, %s, %s, %s)", tos_data)
                     conn.commit(); st.success(f"{duzenlenecek_sinav} başarıyla güncellendi!")
                 st.divider()
                 
@@ -755,7 +761,7 @@ else:
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ (A-B SEKME & YÜKSEK TOLERANS KORUMASI)
+    # 5. HOCA VERİ GİRİŞ PANELİ (YOKLAMA + B KİTAPÇIĞI SÜTUN ZEKASI)
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
         st.subheader("📝 Hızlı Veri Giriş Terminali")
@@ -791,16 +797,25 @@ else:
         secilen_sube = st.selectbox("Sorumlu Olduğunuz Şubeler", hoca_subeleri)
         
         try:
-            rubrik_df = pd.read_sql_query("SELECT ana_bolum, alt_bolum, max_puan FROM sinav_tos WHERE sinav_kodu=%s", conn, params=(secilen_islem_sinavi,))
+            rubrik_df = pd.read_sql_query("SELECT ana_bolum, alt_bolum, max_puan, b_grubu_karsiligi FROM sinav_tos WHERE sinav_kodu=%s", conn, params=(secilen_islem_sinavi,))
         except:
             rubrik_df = pd.read_sql_query("SELECT ana_bolum, alt_bolum, max_puan FROM sinav_tos WHERE sinav_kodu=%s", conn, params=(secilen_islem_sinavi,))
+            rubrik_df['b_grubu_karsiligi'] = ""
             
+        # GÜNCELLEME: A Sütunlarını B Sütunlarına Çeviren Sözlük (Alias Mapping)
         b_map = {}
         reverse_b_map = {}
         for _, row in rubrik_df.iterrows():
             a_name = f"{row['ana_bolum']} - {row['alt_bolum']}"
-            b_map[a_name] = a_name
-            reverse_b_map[a_name] = a_name
+            b_karsi = str(row.get('b_grubu_karsiligi', '')).strip()
+            
+            if b_karsi:
+                b_name = f"{row['ana_bolum']} - {b_karsi}"
+                b_map[a_name] = b_name
+                reverse_b_map[b_name] = a_name
+            else:
+                b_map[a_name] = a_name
+                reverse_b_map[a_name] = a_name
 
         st.markdown(f"### 📊 {secilen_sube} - Veri Giriş Paneli")
         cur.execute("SELECT veri_json FROM notlar WHERE sinav_kodu=%s AND sube=%s", (secilen_islem_sinavi, secilen_sube))
@@ -856,14 +871,17 @@ else:
                 df_view = df_view[df_view["Kitapçık"] == "A"].copy()
                 base_cols = ["Ogrenci_No", "Ad_Soyad", "Sınava Girdi", "Kitapçık", "Sınav Notu"]
                 skill_cols = [c for c in df_view.columns if c not in base_cols]
-                df_view = df_view[base_cols + skill_cols]
+                # A Kitapçığını alfabetik (Part A, Part B) dizer
+                df_view = df_view[base_cols + sorted(skill_cols)]
                 
             elif "B Kitapçığı" in gorunum:
                 df_view = df_view[df_view["Kitapçık"] == "B"].copy()
+                # GÜNCELLEME: Sütun adlarını B'deki adlarına (Örn Part D) çeviriyoruz
                 df_view = df_view.rename(columns=b_map)
                 base_cols = ["Ogrenci_No", "Ad_Soyad", "Sınava Girdi", "Kitapçık", "Sınav Notu"]
-                skill_cols = sorted([c for c in df_view.columns if c not in base_cols])
-                df_view = df_view[base_cols + skill_cols]
+                skill_cols = [c for c in df_view.columns if c not in base_cols]
+                # GÜNCELLEME: Sütunları B'nin fiziksel (alfabetik Part A, Part B) sırasına sokuyoruz
+                df_view = df_view[base_cols + sorted(skill_cols)]
             
             if df_view.empty:
                 st.warning("⚠️ Seçtiğiniz filtreye uygun öğrenci bulunamadı. Lütfen önce 1. Aşamadan öğrencilere o kitapçığı atayıp atamadığınızı kontrol edin.")
@@ -889,6 +907,7 @@ else:
                     max_puan_sozlugu = {f"{r['ana_bolum']} - {r['alt_bolum']}": float(r['max_puan']) for _, r in rubrik_df.iterrows()}
                     
                     if "B Kitapçığı" in gorunum:
+                        # GÜNCELLEME: Kaydederken B'nin sütun adlarını tekrar ana veritabanı (A) formatına geri çevir
                         girilen_notlar_df = girilen_notlar_df.rename(columns=reverse_b_map)
                         
                     df_to_save = df_giris.copy()
@@ -926,7 +945,7 @@ else:
                             
                             for c, m_puan in max_puan_sozlugu.items():
                                 val = df_to_save.at[idx, c]
-                                if val > m_puan: hatalar.append(f"**{row.get('Ogrenci_No', '')}**: '{c}' notu ({val}), max ({m_puan}) aşıyor!")
+                                if val > m_puan: hatalar.append(f"**{row.get('Ogrenci_No', '')}**: '{c.split('-')[-1].strip()}' notu ({val}), max ({m_puan}) aşıyor!")
                                 
                             for c1, c2, c3 in cift_okumalar:
                                 if c1 in max_puan_sozlugu and c2 in max_puan_sozlugu:
@@ -961,9 +980,8 @@ else:
                             for col in max_puan_sozlugu.keys(): df_to_save.at[idx, col] = 0.0
                             df_to_save.at[idx, "Sınav Notu"] = 0.0
                             
-                    # GÜNCELLEME: DeltaGenerator yazdırma hatası çözüldü!
                     if hatalar: 
-                        st.error("🛑 SİSTEM KAYDI DURDURDU: KURALLAR İHLAL EDİLDİ!")
+                        st.error("🛑 SİSTEM KAYDI DURDURDU: KURALLAR İHLAL EDİLDİ VEYA MAX PUAN AŞILDI!")
                         for h in hatalar:
                             st.warning(h)
                         st.stop()
