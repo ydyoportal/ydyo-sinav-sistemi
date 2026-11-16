@@ -394,10 +394,25 @@ else:
                     conn.commit(); st.success(f"{duzenlenecek_sinav} başarıyla güncellendi!")
                 st.divider()
                 
-                st.markdown("### 🗑️ Sınav Silme")
+                # GÜNCELLEME: Şifre Korumalı Sınav Silme Paneli
+                st.markdown("### 🗑️ Sınav Silme (Çift Güvenlikli Kalkan)")
                 silinecek_sinav = st.selectbox("Silinecek Sınavı Seçin", df_sinav_durum['sinav_kodu'].tolist(), key="sil_sec")
+                silme_onay = st.checkbox("⚠️ Bu sınavı ve öğrencilere ait tüm not kayıtlarını kalıcı olarak silmeyi onaylıyorum.")
+                silme_sifre = st.text_input("İşlemi onaylamak için giriş şifrenizi tekrar girin:", type="password")
+                
                 if st.button("🗑️ Seçili Sınavı Tamamen Sil"):
-                    conn.cursor().execute("DELETE FROM sinavlar WHERE sinav_kodu=%s", (silinecek_sinav,)); conn.commit(); st.success("Sınav silindi!"); st.rerun()
+                    if not silme_onay:
+                        st.error("Lütfen yukarıdaki onay kutusunu işaretleyin.")
+                    else:
+                        cur.execute("SELECT sifre FROM kullanicilar WHERE kullanici_adi=%s", (st.session_state['kullanici_adi'],))
+                        admin_hash = cur.fetchone()[0]
+                        if sifre_dogrula(silme_sifre, admin_hash):
+                            cur.execute("DELETE FROM sinavlar WHERE sinav_kodu=%s", (silinecek_sinav,))
+                            conn.commit()
+                            st.success(f"{silinecek_sinav} sınavı ve tüm verileri sistemden kalıcı olarak silindi!")
+                            st.rerun()
+                        else:
+                            st.error("Şifre hatalı! Güvenlik nedeniyle silme işlemi reddedildi.")
             else: st.info("Sistemde kayıtlı sınav yok.")
             
             if st.session_state['rol'] == "Admin":
@@ -524,14 +539,87 @@ else:
                 "🎯 Madde Ayırt Edicilik (Item Discrimination)", 
                 "⚖️ Puanlayıcı Güvenirliği (Inter-Rater Reliability)",
                 "👤 Bireysel Karneler",
-                "🏫 Sınıf / Şube Raporu"
+                "🏫 Sınıf / Şube Raporu",
+                "📡 Canlı Sınav Takip Radarı",
+                "📥 OBS Excel Çıktısı"
             ], horizontal=True)
             st.divider()
             
             conn = get_db_connection()
             cur = conn.cursor()
             
-            if rapor_kapsami == "🏆 Dönem Sonu Konsolide Başarı":
+            # GÜNCELLEME: 1. Yeni Özellik - Canlı Eksik Not Radarı
+            if rapor_kapsami == "📡 Canlı Sınav Takip Radarı":
+                cur.execute("SELECT sinav_kodu FROM sinavlar")
+                sinavlar = [r[0] for r in cur.fetchall()]
+                if not sinavlar: st.warning("Kayıtlı sınav yok.")
+                else:
+                    sec_sinav = st.selectbox("Takip Edilecek Sınavı Seçin", sinavlar)
+                    ilgili_modul = sec_sinav.split("_")[0]
+                    
+                    cur.execute("SELECT h.sube, h.kullanici_adi, k.isim FROM hoca_atamalari h LEFT JOIN kullanicilar k ON h.kullanici_adi = k.kullanici_adi WHERE h.modul=%s", (ilgili_modul,))
+                    hoca_atamalari = cur.fetchall()
+                    
+                    if not hoca_atamalari: st.info("Bu modül için atanmış sınıf/hoca bulunmuyor.")
+                    else:
+                        st.markdown(f"#### 📡 {sec_sinav} - Veri Giriş Durumları")
+                        for sube, k_adi, hoca_isim in sorted(hoca_atamalari, key=lambda x: x[0]):
+                            cur.execute("SELECT COUNT(*) FROM ogrenciler WHERE modul=%s AND sube=%s", (ilgili_modul, sube))
+                            toplam_ogrenci = cur.fetchone()[0]
+                            
+                            cur.execute("SELECT veri_json FROM notlar WHERE sinav_kodu=%s AND sube=%s", (sec_sinav, sube))
+                            not_verisi = cur.fetchone()
+                            
+                            okunan_ogrenci = 0
+                            if not_verisi:
+                                df_not = pd.read_json(io.StringIO(not_verisi[0]))
+                                if "Sınav Notu" in df_not.columns:
+                                    okunan_ogrenci = len(df_not[df_not["Sınav Notu"] > 0])
+                            
+                            if toplam_ogrenci > 0:
+                                yuzde = min(int((okunan_ogrenci / toplam_ogrenci) * 100), 100)
+                            else:
+                                yuzde = 0
+                                
+                            col_text, col_bar = st.columns([1, 3])
+                            col_text.write(f"**{sube}** ({hoca_isim or k_adi})")
+                            col_bar.progress(yuzde, text=f"{okunan_ogrenci} / {toplam_ogrenci} Öğrenci Okundu (%{yuzde})")
+                            st.write("")
+
+            # GÜNCELLEME: 2. Yeni Özellik - OBS Tek Tık Çıktısı
+            elif rapor_kapsami == "📥 OBS Excel Çıktısı":
+                cur.execute("SELECT sinav_kodu FROM sinavlar")
+                sinavlar = [r[0] for r in cur.fetchall()]
+                if not sinavlar: st.warning("Kayıtlı sınav yok.")
+                else:
+                    sec_sinav = st.selectbox("OBS'ye Aktarılacak Sınavı Seçin", sinavlar)
+                    if st.button("🚀 OBS Formatında Excel Üret", type="primary"):
+                        cur.execute("SELECT sube, veri_json FROM notlar WHERE sinav_kodu=%s", (sec_sinav,))
+                        not_verileri = cur.fetchall()
+                        if not not_verileri: st.error("Bu sınava ait girilmiş hiçbir not bulunamadı!")
+                        else:
+                            obs_listesi = []
+                            for sube, veri_json in not_verileri:
+                                df_temp = pd.read_json(io.StringIO(veri_json))
+                                if "Ogrenci_No" in df_temp.columns and "Sınav Notu" in df_temp.columns:
+                                    for _, row in df_temp.iterrows():
+                                        ogr_no = str(row["Ogrenci_No"]).strip()
+                                        notu = row["Sınav Notu"]
+                                        if ogr_no and ogr_no.lower() != "nan":
+                                            obs_listesi.append({"Öğrenci No": ogr_no, "Notu": notu})
+                                            
+                            if obs_listesi:
+                                df_obs = pd.DataFrame(obs_listesi).sort_values(by="Öğrenci No")
+                                buffer = io.BytesIO()
+                                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                                    df_obs.to_excel(writer, index=False, sheet_name="OBS_Aktarim")
+                                buffer.seek(0)
+                                st.success("OBS formatı hazır!")
+                                st.download_button("📥 Excel Dosyasını İndir", data=buffer, file_name=f"OBS_{sec_sinav}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                            else:
+                                st.warning("Excel formatına uygun öğrenci/not kaydı bulunamadı.")
+            
+            elif rapor_kapsami == "🏆 Dönem Sonu Konsolide Başarı":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
                 acik_sinavlar = [r[0] for r in cur.fetchall()]
                 if not acik_sinavlar: st.warning("Sistemde sınav yok.")
@@ -675,7 +763,6 @@ else:
                                 b_yuzdeleri = {}
                                 for col, veri_dict in tos_dict.items():
                                     if col in ogr_veri:
-                                        # GÜNCELLEME: Hata Zırhı Eklendi (Try-Except)
                                         try: alinan = float(str(ogr_veri[col]).replace(',', '.'))
                                         except: alinan = 0.0
                                             
@@ -686,7 +773,6 @@ else:
                                         st.progress(min(int(yuzde), 100))
                                 
                                 if st.button("📄 PDF Karne Oluştur", type="primary"):
-                                    # Hata zırhı PDF listesi için de uygulandı
                                     safe_scores = []
                                     for c in tos_dict.keys():
                                         try: safe_scores.append(float(str(ogr_veri.get(c, 0)).replace(',', '.')))
@@ -727,7 +813,6 @@ else:
                         if "Kitapçık" not in df_s.columns: df_s["Kitapçık"] = "A"
                         df_aktif = df_s[df_s["Sınava Girdi"] == True]
                         
-                        # GÜNCELLEME: Tüm okuma verilerini güvenli formata çek
                         for c in tos_dict.keys():
                             if c in df_aktif.columns:
                                 df_aktif[c] = pd.to_numeric(df_aktif[c].astype(str).str.replace(',', '.'), errors='coerce').fillna(0.0)
@@ -791,7 +876,7 @@ else:
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ 
+    # 5. HOCA VERİ GİRİŞ PANELİ (GÖRSEL METRİKLER EKLENDİ)
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
         st.subheader("📝 Hızlı Veri Giriş Terminali")
@@ -876,6 +961,19 @@ else:
         
         skill_cols_in_order = [f"{row['ana_bolum']} - {row['alt_bolum']}" for _, row in rubrik_df.iterrows()]
         
+        # GÜNCELLEME: Hoca Ekranı Görsel İlerleme Çubuğu ve Metrikler
+        total_ogr = len(df_giris)
+        if total_ogr > 0:
+            graded_ogr = (df_giris['Sınav Notu'] > 0).sum()
+            tamamlanma_yuzdesi = min(int((graded_ogr / total_ogr) * 100), 100)
+            st.progress(tamamlanma_yuzdesi, text=f"Sınıf Notlandırma İlerlemesi: %{tamamlanma_yuzdesi} ({graded_ogr} / {total_ogr} Öğrenci)")
+            
+            mc1, mc2, mc3 = st.columns(3)
+            mc1.metric("Şube Ortalaması", f"{df_giris[df_giris['Sınav Notu'] > 0]['Sınav Notu'].mean():.1f}" if graded_ogr > 0 else "0")
+            mc2.metric("En Yüksek Not", f"{df_giris['Sınav Notu'].max():.1f}" if graded_ogr > 0 else "0")
+            mc3.metric("Kayıtlı Öğrenci", f"{total_ogr}")
+            st.markdown("---")
+
         if is_multi_booklet:
             tab_yoklama, tab_notlar = st.tabs(["📍 1. Aşama: Yoklama ve Kitapçık Seçimi", "✍️ 2. Aşama: Not Girişi (A/B Görünümlü)"])
             
