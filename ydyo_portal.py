@@ -284,8 +284,7 @@ else:
             if 'taslak_df' not in st.session_state:
                 st.session_state['taslak_df'] = pd.DataFrame({
                     "Ana Bölüm": ["Grammar"], 
-                    "Alt Bölüm (A Grubu)": ["Part A"], 
-                    "B Grubu Karşılığı": [""],
+                    "Alt Bölüm (Tematik İsim)": ["Tenses"], 
                     "Ölçülen Kazanımlar": ["Present Simple"], 
                     "Max Puan": ["15,0"]
                 })
@@ -295,8 +294,7 @@ else:
                 num_rows="dynamic", 
                 column_config={
                     "Ana Bölüm": st.column_config.SelectboxColumn("Ana Bölüm", options=ANA_BOLUMLER, required=True),
-                    "Alt Bölüm (A Grubu)": st.column_config.TextColumn("Alt Bölüm (A Grubu)", required=True),
-                    "B Grubu Karşılığı": st.column_config.TextColumn("B Grubu Karşılığı (İsteğe Bağlı)"),
+                    "Alt Bölüm (Tematik İsim)": st.column_config.TextColumn("Alt Bölüm (Tematik İsim)", required=True),
                     "Max Puan": st.column_config.TextColumn("Max Puan")
                 }, 
                 use_container_width=True
@@ -314,11 +312,10 @@ else:
                     tos_data = []
                     for _, row in duzenlenen_rubrik.iterrows():
                         saf_max = float(str(row.get('Max Puan', '0')).replace(',', '.'))
-                        b_grubu = str(row.get('B Grubu Karşılığı', '')).strip()
-                        tos_data.append((sinav_kodu, row['Ana Bölüm'], row['Alt Bölüm (A Grubu)'], row['Ölçülen Kazanımlar'], saf_max, b_grubu))
+                        tos_data.append((sinav_kodu, row['Ana Bölüm'], row['Alt Bölüm (Tematik İsim)'], row['Ölçülen Kazanımlar'], saf_max))
                     
                     if tos_data:
-                        cur.executemany("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan, b_grubu_karsiligi) VALUES (%s, %s, %s, %s, %s, %s)", tos_data)
+                        cur.executemany("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan) VALUES (%s, %s, %s, %s, %s)", tos_data)
                     conn.commit()
                     st.success("Sınav başarıyla buluta kaydedildi!")
                 cur.close(); conn.close()
@@ -355,11 +352,12 @@ else:
                 mevcut_tolerans = int(tol_res[0]) if (tol_res and tol_res[0] is not None) else 6
                 yeni_tolerans = st.number_input("Güncel Çift Okuma Tolerans Farkı", min_value=0, value=mevcut_tolerans)
                 
-                df_mevcut_tos = pd.read_sql_query('SELECT ana_bolum AS "Ana Bölüm", alt_bolum AS "Alt Bölüm (A Grubu)", b_grubu_karsiligi AS "B Grubu Karşılığı", kazanimlar AS "Ölçülen Kazanımlar", max_puan AS "Max Puan" FROM sinav_tos WHERE sinav_kodu=%s', conn, params=(duzenlenecek_sinav,))
+                df_mevcut_tos = pd.read_sql_query('SELECT ana_bolum AS "Ana Bölüm", alt_bolum AS "Alt Bölüm (Tematik İsim)", kazanimlar AS "Ölçülen Kazanımlar", max_puan AS "Max Puan" FROM sinav_tos WHERE sinav_kodu=%s', conn, params=(duzenlenecek_sinav,))
                 df_mevcut_tos["Max Puan"] = df_mevcut_tos["Max Puan"].astype(str).str.replace(".", ",")
                 
                 st.markdown("**Güncel Belirtke Tablosu (ToS):**")
                 guncel_tos = st.data_editor(df_mevcut_tos, num_rows="dynamic", column_config={"Ana Bölüm": st.column_config.SelectboxColumn("Ana Bölüm", options=ANA_BOLUMLER, required=True), "Max Puan": st.column_config.TextColumn("Max Puan")}, use_container_width=True, key="edit_tos_editor")
+                
                 if st.button("💾 Değişiklikleri Kaydet (Sınavı Güncelle)", type="primary"):
                     cur.execute("UPDATE sinav_ayarlari SET tolerans=%s WHERE sinav_kodu=%s", (yeni_tolerans, duzenlenecek_sinav))
                     cur.execute("DELETE FROM sinav_tos WHERE sinav_kodu=%s", (duzenlenecek_sinav,))
@@ -367,11 +365,10 @@ else:
                     tos_data = []
                     for _, row in guncel_tos.iterrows():
                         saf_max = float(str(row.get('Max Puan', '0')).replace(',', '.'))
-                        b_grubu = str(row.get('B Grubu Karşılığı', '')).strip()
-                        tos_data.append((duzenlenecek_sinav, row['Ana Bölüm'], row['Alt Bölüm (A Grubu)'], row['Ölçülen Kazanımlar'], saf_max, b_grubu))
+                        tos_data.append((duzenlenecek_sinav, row['Ana Bölüm'], row['Alt Bölüm (Tematik İsim)'], row['Ölçülen Kazanımlar'], saf_max))
                         
                     if tos_data:
-                        cur.executemany("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan, b_grubu_karsiligi) VALUES (%s, %s, %s, %s, %s, %s)", tos_data)
+                        cur.executemany("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan) VALUES (%s, %s, %s, %s, %s)", tos_data)
                     conn.commit(); st.success(f"{duzenlenecek_sinav} başarıyla güncellendi!")
                 st.divider()
                 
@@ -758,7 +755,7 @@ else:
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ (İKİ AŞAMALI: YOKLAMA VE NOT GİRİŞİ)
+    # 5. HOCA VERİ GİRİŞ PANELİ (A-B SEKME & YÜKSEK TOLERANS KORUMASI)
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
         st.subheader("📝 Hızlı Veri Giriş Terminali")
@@ -794,23 +791,16 @@ else:
         secilen_sube = st.selectbox("Sorumlu Olduğunuz Şubeler", hoca_subeleri)
         
         try:
-            rubrik_df = pd.read_sql_query("SELECT ana_bolum, alt_bolum, max_puan, b_grubu_karsiligi FROM sinav_tos WHERE sinav_kodu=%s", conn, params=(secilen_islem_sinavi,))
+            rubrik_df = pd.read_sql_query("SELECT ana_bolum, alt_bolum, max_puan FROM sinav_tos WHERE sinav_kodu=%s", conn, params=(secilen_islem_sinavi,))
         except:
             rubrik_df = pd.read_sql_query("SELECT ana_bolum, alt_bolum, max_puan FROM sinav_tos WHERE sinav_kodu=%s", conn, params=(secilen_islem_sinavi,))
-            rubrik_df['b_grubu_karsiligi'] = ""
             
         b_map = {}
         reverse_b_map = {}
         for _, row in rubrik_df.iterrows():
             a_name = f"{row['ana_bolum']} - {row['alt_bolum']}"
-            b_karsi = str(row.get('b_grubu_karsiligi', '')).strip()
-            if b_karsi:
-                b_name = f"{row['ana_bolum']} - {b_karsi}"
-                b_map[a_name] = b_name
-                reverse_b_map[b_name] = a_name
-            else:
-                b_map[a_name] = a_name
-                reverse_b_map[a_name] = a_name
+            b_map[a_name] = a_name
+            reverse_b_map[a_name] = a_name
 
         st.markdown(f"### 📊 {secilen_sube} - Veri Giriş Paneli")
         cur.execute("SELECT veri_json FROM notlar WHERE sinav_kodu=%s AND sube=%s", (secilen_islem_sinavi, secilen_sube))
@@ -834,7 +824,6 @@ else:
             else:
                 df_giris[col_name] = df_giris[col_name].apply(lambda x: str(x).replace(".", ",") if pd.notnull(x) else "")
                 
-        # GÜNCELLEME: Sekmeli (Tab) Mimari Başlıyor
         tab_yoklama, tab_notlar = st.tabs(["📍 1. Aşama: Yoklama ve Kitapçık Seçimi", "✍️ 2. Aşama: Not Girişi (A/B Görünümlü)"])
         
         with tab_yoklama:
@@ -972,7 +961,12 @@ else:
                             for col in max_puan_sozlugu.keys(): df_to_save.at[idx, col] = 0.0
                             df_to_save.at[idx, "Sınav Notu"] = 0.0
                             
-                    if hatalar: st.error("🛑 SİSTEM KAYDI DURDURDU: KURALLAR İHLAL EDİLDİ!"); [st.warning(h) for h in hatalar]; st.stop()
+                    # GÜNCELLEME: DeltaGenerator yazdırma hatası çözüldü!
+                    if hatalar: 
+                        st.error("🛑 SİSTEM KAYDI DURDURDU: KURALLAR İHLAL EDİLDİ!")
+                        for h in hatalar:
+                            st.warning(h)
+                        st.stop()
                         
                     cur.execute("""INSERT INTO notlar (sinav_kodu, sube, veri_json) VALUES (%s, %s, %s) ON CONFLICT (sinav_kodu, sube) DO UPDATE SET veri_json = EXCLUDED.veri_json;""", (secilen_islem_sinavi, secilen_sube, df_to_save.to_json(orient="records")))
                     conn.commit(); cur.close(); conn.close()
