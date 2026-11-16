@@ -23,7 +23,6 @@ def sifre_dogrula(girilen_sifre: str, hashli_sifre: str) -> bool:
 def get_db_connection():
     return psycopg2.connect(st.secrets["SUPABASE_URI"])
 
-# GÜNCELLEME: Veritabanına zarar vermeden "B Grubu Eşleştirme" sütununu otomatik ekleyen güvenlik kilidi
 def check_and_update_schema():
     try:
         conn = get_db_connection()
@@ -131,8 +130,6 @@ def create_landscape_class_pdf(veri):
     elements.append(Paragraph("<b>Detailed Student List & Scores</b>", styles['Heading4']))
     elements.append(Spacer(1, 5))
     col_count = len(df_liste.columns)
-    
-    # GÜNCELLEME: PDF Tablosuna "Booklet" sütun boşluğu da eklendi
     base_widths = {'Student ID': 70, 'Name Surname': 140, 'Booklet': 40, 'Status': 60, 'Total Score': 50}
     kalan_genislik = 782 - sum(base_widths.values())
     skill_col_width = kalan_genislik / max(1, col_count - 5)
@@ -282,7 +279,6 @@ else:
 
             ANA_BOLUMLER = ["Listening I", "Listening II", "Reading I", "Reading II", "Grammar", "Functional Language", "Use of English", "Vocabulary", "Speaking", "Speaking 1st", "Speaking 2nd", "Speaking 3rd", "Writing", "Writing (1. Okuma)", "Writing (2. Okuma)", "Writing (3. Okuma)"]
             
-            # GÜNCELLEME: B Grubu Karşılığı varsayılan olarak eklendi
             if 'taslak_df' not in st.session_state:
                 st.session_state['taslak_df'] = pd.DataFrame({
                     "Ana Bölüm": ["Grammar"], 
@@ -314,7 +310,6 @@ else:
                     cur.execute("INSERT INTO sinav_ayarlari (sinav_kodu, tolerans) VALUES (%s, %s)", (sinav_kodu, tolerans_baremi))
                     for _, row in duzenlenen_rubrik.iterrows():
                         saf_max = float(str(row.get('Max Puan', '0')).replace(',', '.'))
-                        # b_grubu_karsiligi eklendi
                         b_grubu = str(row.get('B Grubu Karşılığı', '')).strip()
                         cur.execute("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan, b_grubu_karsiligi) VALUES (%s, %s, %s, %s, %s, %s)", (sinav_kodu, row['Ana Bölüm'], row['Alt Bölüm (A Grubu)'], row['Ölçülen Kazanımlar'], saf_max, b_grubu))
                     conn.commit()
@@ -353,7 +348,6 @@ else:
                 mevcut_tolerans = int(tol_res[0]) if (tol_res and tol_res[0] is not None) else 6
                 yeni_tolerans = st.number_input("Güncel Çift Okuma Tolerans Farkı", min_value=0, value=mevcut_tolerans)
                 
-                # GÜNCELLEME: Düzenleme ekranına B Grubu karşılığı çekildi
                 df_mevcut_tos = pd.read_sql_query('SELECT ana_bolum AS "Ana Bölüm", alt_bolum AS "Alt Bölüm (A Grubu)", b_grubu_karsiligi AS "B Grubu Karşılığı", kazanimlar AS "Ölçülen Kazanımlar", max_puan AS "Max Puan" FROM sinav_tos WHERE sinav_kodu=%s', conn, params=(duzenlenecek_sinav,))
                 df_mevcut_tos["Max Puan"] = df_mevcut_tos["Max Puan"].astype(str).str.replace(".", ",")
                 
@@ -637,7 +631,6 @@ else:
                             sec_ogr = st.selectbox("Öğrenci Seçin", df_k['Ad_Soyad'].tolist())
                             ogr_veri = df_k[df_k['Ad_Soyad'] == sec_ogr].iloc[0]
                             
-                            # PDF İçin Kitapçık bilgisini gösterelim
                             bkl = ogr_veri.get('Kitapçık', 'A')
                             st.markdown(f"#### 🎓 Öğrenci: {sec_ogr} (Toplam: {ogr_veri.get('Sınav Notu', 0)} | Kitapçık: {bkl})")
                             
@@ -750,7 +743,7 @@ else:
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ (A-B GRUBU EŞLEŞTİRME DESTEKLİ)
+    # 5. HOCA VERİ GİRİŞ PANELİ (FORM İLE OPTİMİZE EDİLDİ)
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
         st.subheader("📝 Hızlı Veri Giriş Terminali")
@@ -785,7 +778,6 @@ else:
         
         secilen_sube = st.selectbox("Sorumlu Olduğunuz Şubeler", hoca_subeleri)
         
-        # GÜNCELLEME: ToS verisi çekilirken b_grubu_karsiligi de alınıyor
         try:
             rubrik_df = pd.read_sql_query("SELECT ana_bolum, alt_bolum, max_puan, b_grubu_karsiligi FROM sinav_tos WHERE sinav_kodu=%s", conn, params=(secilen_islem_sinavi,))
         except:
@@ -820,16 +812,18 @@ else:
             "Kitapçık": st.column_config.SelectboxColumn("Kitapçık", options=["A", "B", "C", "D"], default="A")
         }
         
-        # GÜNCELLEME: Sütun isimleri hocaya Rehber (B Grubu karşılığı) ile birlikte gösterilir
         for _, row in rubrik_df.iterrows():
             c_name = f"{row['ana_bolum']} - {row['alt_bolum']}"
             b_karsi = row.get('b_grubu_karsiligi', '')
             disp_name = f"{c_name} (B Grubu: {b_karsi})" if b_karsi and pd.notnull(b_karsi) and str(b_karsi).strip() != "" else c_name
             col_conf[c_name] = st.column_config.TextColumn(disp_name)
             
-        girilen_notlar_df = st.data_editor(df_giris, num_rows="dynamic", use_container_width=True, column_config=col_conf, disabled=is_locked)
-        
-        if not is_locked and st.button("💾 Notları Buluta Kaydet", type="primary"):
+        # GÜNCELLEME: Tüm tabloyu form içine alarak yavaşlama sorununu ortadan kaldırır
+        with st.form("hoca_veri_giris_formu"):
+            girilen_notlar_df = st.data_editor(df_giris, num_rows="dynamic", use_container_width=True, column_config=col_conf, disabled=is_locked)
+            kaydet_btn = st.form_submit_button("💾 Notları Buluta Kaydet", type="primary", disabled=is_locked)
+            
+        if kaydet_btn and not is_locked:
             hatalar = []
             max_puan_sozlugu = {f"{r['ana_bolum']} - {r['alt_bolum']}": float(r['max_puan']) for _, r in rubrik_df.iterrows()}
             df_to_save = girilen_notlar_df.copy()
@@ -855,4 +849,5 @@ else:
                 
             cur.execute("""INSERT INTO notlar (sinav_kodu, sube, veri_json) VALUES (%s, %s, %s) ON CONFLICT (sinav_kodu, sube) DO UPDATE SET veri_json = EXCLUDED.veri_json;""", (secilen_islem_sinavi, secilen_sube, df_to_save.to_json(orient="records")))
             conn.commit(); cur.close(); conn.close()
-            st.success("Notlar bulut veritabanına başarıyla kaydedildi!"); st.rerun()
+            st.success("Notlar bulut veritabanına başarıyla kaydedildi!")
+            st.rerun()
