@@ -675,7 +675,10 @@ else:
                                 b_yuzdeleri = {}
                                 for col, veri_dict in tos_dict.items():
                                     if col in ogr_veri:
-                                        alinan = float(ogr_veri[col])
+                                        # GÜNCELLEME: Hata Zırhı Eklendi (Try-Except)
+                                        try: alinan = float(str(ogr_veri[col]).replace(',', '.'))
+                                        except: alinan = 0.0
+                                            
                                         m_puan = veri_dict["max"]
                                         yuzde = (alinan / m_puan * 100) if m_puan > 0 else 0
                                         b_yuzdeleri[col] = yuzde
@@ -683,10 +686,16 @@ else:
                                         st.progress(min(int(yuzde), 100))
                                 
                                 if st.button("📄 PDF Karne Oluştur", type="primary"):
+                                    # Hata zırhı PDF listesi için de uygulandı
+                                    safe_scores = []
+                                    for c in tos_dict.keys():
+                                        try: safe_scores.append(float(str(ogr_veri.get(c, 0)).replace(',', '.')))
+                                        except: safe_scores.append(0.0)
+                                        
                                     df_pdf = pd.DataFrame({
                                         "Section / Skill": list(tos_dict.keys()), 
                                         "Objectives": [tos_dict[c]['kazanim'] for c in tos_dict.keys()],
-                                        "Score Achieved": [ogr_veri.get(c, 0) for c in tos_dict.keys()],
+                                        "Score Achieved": safe_scores,
                                         "Max Score": [tos_dict[c]['max'] for c in tos_dict.keys()]
                                     })
                                     r_veri = [{'baslik': f"{sec_sinav} - Individual Report Card", 'alt_baslik': f"Student: {sec_ogr} | Class: {sec_sube} | Booklet: {bkl} | Total Score: {ogr_veri.get('Sınav Notu', 0)}", 'df_list': [("Skill & Objectives Details", df_pdf)], 'beceri_grafik_verisi': b_yuzdeleri}]
@@ -717,6 +726,11 @@ else:
                         if "Sınava Girdi" not in df_s.columns: df_s["Sınava Girdi"] = True
                         if "Kitapçık" not in df_s.columns: df_s["Kitapçık"] = "A"
                         df_aktif = df_s[df_s["Sınava Girdi"] == True]
+                        
+                        # GÜNCELLEME: Tüm okuma verilerini güvenli formata çek
+                        for c in tos_dict.keys():
+                            if c in df_aktif.columns:
+                                df_aktif[c] = pd.to_numeric(df_aktif[c].astype(str).str.replace(',', '.'), errors='coerce').fillna(0.0)
                         
                         st.markdown(f"### {sec_sube} - Genel Sınıf İstatistikleri")
                         c1, c2, c3, c4 = st.columns(4)
@@ -777,7 +791,7 @@ else:
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ (AKILLI KİTAPÇIK YÖNETİMİ)
+    # 5. HOCA VERİ GİRİŞ PANELİ 
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
         st.subheader("📝 Hızlı Veri Giriş Terminali")
@@ -931,7 +945,6 @@ else:
                         df_to_save = df_giris.copy()
                         df_to_save.update(girilen_notlar_df)
                         
-                        # GÜNCELLEME: İsimlere Takılmayan Zeki Çift Okuma Tespit Algoritması
                         cift_okumalar = []
                         for c1 in max_puan_sozlugu.keys():
                             if "(1. Okuma)" in c1 or "1st" in c1:
@@ -967,12 +980,9 @@ else:
                                         v1 = df_to_save.at[idx, c1]
                                         v2 = df_to_save.at[idx, c2]
                                         
-                                        has_v3 = False
-                                        v3 = 0.0
-                                        if c3:
-                                            v3_raw = str(girilen_notlar_df.at[idx, c3]).strip() if c3 in girilen_notlar_df.columns else ""
-                                            has_v3 = v3_raw not in ["", "nan", "None", "<NA>"]
-                                            v3 = df_to_save.at[idx, c3]
+                                        v3_raw = str(girilen_notlar_df.at[idx, c3]).strip() if c3 in max_puan_sozlugu else ""
+                                        has_v3 = v3_raw not in ["", "nan", "None", "<NA>"]
+                                        v3 = df_to_save.at[idx, c3] if c3 in max_puan_sozlugu else 0.0
                                         
                                         if abs(v1 - v2) > tolerans:
                                             if not has_v3 and c3 in max_puan_sozlugu:
@@ -1033,7 +1043,6 @@ else:
                 df_to_save = df_giris.copy()
                 df_to_save.update(girilen_notlar_df)
                 
-                # GÜNCELLEME: İsimlere Takılmayan Zeki Çift Okuma Tespit Algoritması
                 cift_okumalar = []
                 for c1 in max_puan_sozlugu.keys():
                     if "(1. Okuma)" in c1 or "1st" in c1:
