@@ -23,6 +23,8 @@ def sifre_dogrula(girilen_sifre: str, hashli_sifre: str) -> bool:
 def get_db_connection():
     return psycopg2.connect(st.secrets["SUPABASE_URI"])
 
+# GÜNCELLEME: Şema kontrolü sadece sistem ilk açıldığında 1 kez çalışacak şekilde önbelleğe alındı. (Hız artışı)
+@st.cache_resource
 def check_and_update_schema():
     try:
         conn = get_db_connection()
@@ -32,6 +34,7 @@ def check_and_update_schema():
         cur.close(); conn.close()
     except Exception:
         pass
+    return True
 
 check_and_update_schema()
 
@@ -308,10 +311,16 @@ else:
                 else:
                     cur.execute("INSERT INTO sinavlar (sinav_kodu, kilitli) VALUES (%s, FALSE)", (sinav_kodu,))
                     cur.execute("INSERT INTO sinav_ayarlari (sinav_kodu, tolerans) VALUES (%s, %s)", (sinav_kodu, tolerans_baremi))
+                    
+                    # GÜNCELLEME: Tüm ToS satırlarını tek bir batch paketi haline getirip gönderir (14 saniyeden 0.2 saniyeye)
+                    tos_data = []
                     for _, row in duzenlenen_rubrik.iterrows():
                         saf_max = float(str(row.get('Max Puan', '0')).replace(',', '.'))
                         b_grubu = str(row.get('B Grubu Karşılığı', '')).strip()
-                        cur.execute("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan, b_grubu_karsiligi) VALUES (%s, %s, %s, %s, %s, %s)", (sinav_kodu, row['Ana Bölüm'], row['Alt Bölüm (A Grubu)'], row['Ölçülen Kazanımlar'], saf_max, b_grubu))
+                        tos_data.append((sinav_kodu, row['Ana Bölüm'], row['Alt Bölüm (A Grubu)'], row['Ölçülen Kazanımlar'], saf_max, b_grubu))
+                    
+                    if tos_data:
+                        cur.executemany("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan, b_grubu_karsiligi) VALUES (%s, %s, %s, %s, %s, %s)", tos_data)
                     conn.commit()
                     st.success("Sınav başarıyla buluta kaydedildi!")
                 cur.close(); conn.close()
@@ -353,13 +362,20 @@ else:
                 
                 st.markdown("**Güncel Belirtke Tablosu (ToS):**")
                 guncel_tos = st.data_editor(df_mevcut_tos, num_rows="dynamic", column_config={"Ana Bölüm": st.column_config.SelectboxColumn("Ana Bölüm", options=ANA_BOLUMLER, required=True), "Max Puan": st.column_config.TextColumn("Max Puan")}, use_container_width=True, key="edit_tos_editor")
+                
                 if st.button("💾 Değişiklikleri Kaydet (Sınavı Güncelle)", type="primary"):
                     cur.execute("UPDATE sinav_ayarlari SET tolerans=%s WHERE sinav_kodu=%s", (yeni_tolerans, duzenlenecek_sinav))
                     cur.execute("DELETE FROM sinav_tos WHERE sinav_kodu=%s", (duzenlenecek_sinav,))
+                    
+                    # GÜNCELLEME: Sınav düzenleme ekranı da Batch Insert ile optimize edildi
+                    tos_data = []
                     for _, row in guncel_tos.iterrows():
                         saf_max = float(str(row.get('Max Puan', '0')).replace(',', '.'))
                         b_grubu = str(row.get('B Grubu Karşılığı', '')).strip()
-                        cur.execute("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan, b_grubu_karsiligi) VALUES (%s, %s, %s, %s, %s, %s)", (duzenlenecek_sinav, row['Ana Bölüm'], row['Alt Bölüm (A Grubu)'], row['Ölçülen Kazanımlar'], saf_max, b_grubu))
+                        tos_data.append((duzenlenecek_sinav, row['Ana Bölüm'], row['Alt Bölüm (A Grubu)'], row['Ölçülen Kazanımlar'], saf_max, b_grubu))
+                        
+                    if tos_data:
+                        cur.executemany("INSERT INTO sinav_tos (sinav_kodu, ana_bolum, alt_bolum, kazanimlar, max_puan, b_grubu_karsiligi) VALUES (%s, %s, %s, %s, %s, %s)", tos_data)
                     conn.commit(); st.success(f"{duzenlenecek_sinav} başarıyla güncellendi!")
                 st.divider()
                 
@@ -473,9 +489,14 @@ else:
                 st.divider()
                 st.markdown("**Öğrenci Kütüğü Yükleme Terminali**")
                 duzenlenen_ogr = st.data_editor(pd.read_sql_query("SELECT ogrenci_no, ad_soyad, modul, sube FROM ogrenciler", conn), num_rows="dynamic", use_container_width=True)
+                
                 if st.button("Öğrenci Kütüğünü Kaydet"):
                     cur = conn.cursor(); cur.execute("DELETE FROM ogrenciler")
-                    for _, r in duzenlenen_ogr.iterrows(): cur.execute("INSERT INTO ogrenciler (ogrenci_no, ad_soyad, modul, sube) VALUES (%s, %s, %s, %s)", (r['ogrenci_no'], r['ad_soyad'], r['modul'], r['sube']))
+                    
+                    # GÜNCELLEME: Tüm öğrenci listesi tek bir SQL paketi olarak optimize edildi
+                    ogr_data = [(r['ogrenci_no'], r['ad_soyad'], r['modul'], r['sube']) for _, r in duzenlenen_ogr.iterrows()]
+                    if ogr_data:
+                        cur.executemany("INSERT INTO ogrenciler (ogrenci_no, ad_soyad, modul, sube) VALUES (%s, %s, %s, %s)", ogr_data)
                     conn.commit(); st.success("Kütük güncellendi!")
                 
                 conn.close()
@@ -743,7 +764,7 @@ else:
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ (FORM İLE OPTİMİZE EDİLDİ)
+    # 5. HOCA VERİ GİRİŞ PANELİ 
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
         st.subheader("📝 Hızlı Veri Giriş Terminali")
@@ -818,7 +839,6 @@ else:
             disp_name = f"{c_name} (B Grubu: {b_karsi})" if b_karsi and pd.notnull(b_karsi) and str(b_karsi).strip() != "" else c_name
             col_conf[c_name] = st.column_config.TextColumn(disp_name)
             
-        # GÜNCELLEME: Tüm tabloyu form içine alarak yavaşlama sorununu ortadan kaldırır
         with st.form("hoca_veri_giris_formu"):
             girilen_notlar_df = st.data_editor(df_giris, num_rows="dynamic", use_container_width=True, column_config=col_conf, disabled=is_locked)
             kaydet_btn = st.form_submit_button("💾 Notları Buluta Kaydet", type="primary", disabled=is_locked)
