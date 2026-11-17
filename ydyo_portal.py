@@ -77,7 +77,7 @@ def get_db_backup_excel():
     return buffer
 
 # ==========================================
-# BİREYSEL KARNE (DİKEY PDF) FONKSİYONLARI 
+# PDF VE EXCEL RAPORLAMA FONKSİYONLARI 
 # ==========================================
 def tr_to_eng(text):
     if not isinstance(text, str): return str(text)
@@ -868,7 +868,7 @@ else:
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ 
+    # 5. HOCA VERİ GİRİŞ PANELİ (AUTO-HEAL ZIRHI İLE)
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
         st.subheader("📝 Hızlı Veri Giriş Terminali")
@@ -916,37 +916,22 @@ else:
             
         max_puan_sozlugu = {f"{r['ana_bolum']} - {r['alt_bolum']}": float(r['max_puan']) for _, r in rubrik_df.iterrows()}
         
-        isaretler = [
-            ("1. Okuma", "2. Okuma", "3. Okuma"),
-            ("(1. Okuma)", "(2. Okuma)", "(3. Okuma)"),
-            ("1st", "2nd", "3rd"),
-            ("1. Hoca", "2. Hoca", "3. Hoca"),
-            ("(1)", "(2)", "(3)"),
-            ("Okuma 1", "Okuma 2", "Okuma 3"),
-            ("Rater 1", "Rater 2", "Rater 3"),
-            (" 1 ", " 2 ", " 3 "),
-            (" 1", " 2", " 3"),
-            ("1.", "2.", "3.")
-        ]
+        isaretler = [("1. Okuma", "2. Okuma", "3. Okuma"), ("(1. Okuma)", "(2. Okuma)", "(3. Okuma)"), ("1st", "2nd", "3rd"), ("1. Hoca", "2. Hoca", "3. Hoca"), ("(1)", "(2)", "(3)"), ("Okuma 1", "Okuma 2", "Okuma 3"), ("Rater 1", "Rater 2", "Rater 3"), (" 1 ", " 2 ", " 3 "), (" 1", " 2", " 3"), ("1.", "2.", "3.")]
         
         cift_okumalar = []
         islenenler = set()
         
         for c1 in max_puan_sozlugu.keys():
             if c1 in islenenler: continue
-            
             c2_match, c3_match = None, None
             for m1, m2, m3 in isaretler:
                 if m1 in c1:
                     hedef_c2 = c1.replace(m1, m2)
                     hedef_c3 = c1.replace(m1, m3)
-                    
                     if hedef_c2 in max_puan_sozlugu:
                         c2_match = hedef_c2
-                        if hedef_c3 in max_puan_sozlugu:
-                            c3_match = hedef_c3
+                        if hedef_c3 in max_puan_sozlugu: c3_match = hedef_c3
                         break
-                        
             if c2_match:
                 cift_okumalar.append((c1, c2_match, c3_match))
                 islenenler.update([c1, c2_match])
@@ -961,33 +946,61 @@ else:
                 eslesen_isimler.append(isim)
             ort_mesaj = "🤖 **Sistem Zekası Aktif:** Şu okumalar otomatik olarak eşleştirildi ve ortalamaları alınacaktır: " + " | ".join(eslesen_isimler)
 
-        # GÜNCELLEME: Sütun isimlendirme sırasında "nan" (Boş B Kitapçığı Yeri) koruma kalkanı eklendi
-        b_map = {}
+        # GÜNCELLEME: Çakışmayı ve B Kitapçığı çökmesini engelleyen Güvenli Haritalama
+        safe_b_map = {}
         reverse_b_map = {}
         for _, row in rubrik_df.iterrows():
             a_name = f"{row['ana_bolum']} - {row['alt_bolum']}"
             b_karsi_raw = str(row.get('b_grubu_karsiligi', '')).strip()
             
-            # Eğer B kitapçığı yeri Excel'den "nan" olarak geldiyse veya tamamen boşsa, A'nın adını koru
-            if b_karsi_raw.lower() == 'nan' or b_karsi_raw == 'None' or not b_karsi_raw:
-                b_map[a_name] = a_name
+            if b_karsi_raw.lower() in ['nan', 'none', '']:
+                safe_b_map[a_name] = a_name
                 reverse_b_map[a_name] = a_name
             elif is_multi_booklet:
                 b_name = f"{row['ana_bolum']} - {b_karsi_raw}"
-                b_map[a_name] = b_name
+                safe_b_map[a_name] = b_name
                 reverse_b_map[b_name] = a_name
             else:
-                b_map[a_name] = a_name
+                safe_b_map[a_name] = a_name
                 reverse_b_map[a_name] = a_name
 
         st.markdown(f"### 📊 {secilen_sube} - Veri Giriş Paneli")
         cur.execute("SELECT veri_json FROM notlar WHERE sinav_kodu=%s AND sube=%s", (secilen_islem_sinavi, secilen_sube))
         kaydedilmis_veri = cur.fetchone()
         
+        # GÜNCELLEME: Efsanevi AUTO-HEAL (Otomatik Kurtarma) Bloğu
+        # Veritabanındaki eski notları kaybetmeden yeni sütunlara taşır ve nan sütunları imha eder
+        current_tos_cols = list(dict.fromkeys([f"{row['ana_bolum']} - {row['alt_bolum']}" for _, row in rubrik_df.iterrows()]))
+        base_cols = ["Ogrenci_No", "Ad_Soyad", "Sınava Girdi", "Kitapçık", "Sınav Notu"]
+        
         if kaydedilmis_veri: 
             df_giris = pd.read_json(io.StringIO(kaydedilmis_veri[0]))
+            
+            # Tüm sütun adlarını temiz string'e çevir ve kopyaları sil
+            df_giris.columns = [str(c).strip() for c in df_giris.columns]
+            df_giris = df_giris.loc[:, ~df_giris.columns.duplicated()]
+            
             if "Sınava Girdi" not in df_giris.columns: df_giris.insert(2, "Sınava Girdi", True)
             if "Kitapçık" not in df_giris.columns: df_giris.insert(3, "Kitapçık", "A")
+            
+            # Veri Kurtarma (Migration)
+            old_cols = [c for c in df_giris.columns if c not in current_tos_cols and c not in base_cols]
+            
+            if old_cols:
+                # Yeni sütunları önceden boş olarak aç
+                for nc in current_tos_cols:
+                    if nc not in df_giris.columns: df_giris[nc] = ""
+                
+                # Speaking notlarını sessizce eski sütundan yenisine taşı
+                old_speak = sorted([c for c in old_cols if 'speaking' in c.lower() and c.lower() != 'nan'])
+                new_speak = sorted([c for c in current_tos_cols if 'speaking' in c.lower()])
+                
+                if len(old_speak) == len(new_speak) and len(old_speak) > 0:
+                    for oc, nc in zip(old_speak, new_speak):
+                        df_giris[nc] = df_giris[oc].fillna('')
+                
+                # Çökmeye sebep olan eski ve hayalet 'nan' sütunlarını kalıcı sil
+                df_giris.drop(columns=old_cols, inplace=True, errors='ignore')
         else:
             gercek_ogrenciler = pd.read_sql_query("SELECT ogrenci_no AS \"Ogrenci_No\", ad_soyad AS \"Ad_Soyad\" FROM ogrenciler WHERE modul=%s AND sube=%s", conn, params=(ilgili_modul, secilen_sube))
             df_giris = gercek_ogrenciler.copy() if not gercek_ogrenciler.empty else pd.DataFrame(columns=["Ogrenci_No", "Ad_Soyad"])
@@ -995,14 +1008,13 @@ else:
             df_giris.insert(3, "Kitapçık", "A")
             df_giris["Sınav Notu"] = 0.0 
         
-        for _, row in rubrik_df.iterrows():
-            col_name = f"{row['ana_bolum']} - {row['alt_bolum']}"
-            if col_name not in df_giris.columns:
-                df_giris[col_name] = ""
+        for nc in current_tos_cols:
+            if nc not in df_giris.columns:
+                df_giris[nc] = ""
             else:
-                df_giris[col_name] = df_giris[col_name].apply(lambda x: str(x).replace(".", ",") if pd.notnull(x) else "")
+                df_giris[nc] = df_giris[nc].apply(lambda x: str(x).replace(".", ",") if pd.notnull(x) else "")
         
-        skill_cols_in_order = [f"{row['ana_bolum']} - {row['alt_bolum']}" for _, row in rubrik_df.iterrows()]
+        skill_cols_in_order = current_tos_cols
         
         total_ogr = len(df_giris)
         if total_ogr > 0:
@@ -1047,17 +1059,15 @@ else:
                 
                 if "A Kitapçığı" in gorunum:
                     df_view = df_view[df_view["Kitapçık"] == "A"].copy()
-                    base_cols = ["Ogrenci_No", "Ad_Soyad", "Sınava Girdi", "Kitapçık", "Sınav Notu"]
                     df_view = df_view[base_cols + skill_cols_in_order]
                     
                 elif "B Kitapçığı" in gorunum:
                     df_view = df_view[df_view["Kitapçık"] == "B"].copy()
                     
-                    # Güvenli yeniden adlandırma kalkanı
-                    safe_b_map = {k: v for k, v in b_map.items() if k in df_view.columns}
-                    df_view = df_view.rename(columns=safe_b_map)
+                    # Güvenli yeniden adlandırma (Crash engeller)
+                    active_safe_map = {k: v for k, v in safe_b_map.items() if k in df_view.columns}
+                    df_view = df_view.rename(columns=active_safe_map)
                     
-                    base_cols = ["Ogrenci_No", "Ad_Soyad", "Sınava Girdi", "Kitapçık", "Sınav Notu"]
                     skill_cols = [c for c in df_view.columns if c not in base_cols]
                     df_view = df_view[base_cols + skill_cols]
                 
@@ -1075,8 +1085,7 @@ else:
                     }
                     
                     for c in df_view.columns:
-                        if c not in ["Ogrenci_No", "Ad_Soyad", "Sınava Girdi", "Kitapçık", "Sınav Notu"]:
-                            col_conf_not[c] = st.column_config.TextColumn(c)
+                        if c not in base_cols: col_conf_not[c] = st.column_config.TextColumn(c)
                     
                     with st.form("hoca_veri_giris_formu"):
                         girilen_notlar_df = st.data_editor(df_view, num_rows="dynamic", use_container_width=True, column_config=col_conf_not, disabled=is_locked)
@@ -1167,8 +1176,7 @@ else:
             }
             
             for c in df_view.columns:
-                if c not in ["Ogrenci_No", "Ad_Soyad", "Sınava Girdi", "Sınav Notu"]:
-                    col_conf_not[c] = st.column_config.TextColumn(c)
+                if c not in base_cols: col_conf_not[c] = st.column_config.TextColumn(c)
             
             st.info("Bu sınav **Tek Kitapçık** olarak yapılandırılmıştır. Tüm notları doğrudan aşağıdaki tabloya girebilirsiniz.")
             
@@ -1234,7 +1242,7 @@ else:
                         df_to_save.at[idx, "Sınav Notu"] = 0.0
                         
                 if hatalar: 
-                    st.error("🛑 SİSTEM KAYDI DURDURDU: KURALLAR İHLALডেম VEYA MAX PUAN AŞILDI!")
+                    st.error("🛑 SİSTEM KAYDI DURDURDU: KURALLAR İHLAL EDİLDİ VEYA MAX PUAN AŞILDI!")
                     for h in hatalar: st.warning(h)
                     st.stop()
                     
