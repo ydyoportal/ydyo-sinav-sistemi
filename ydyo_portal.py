@@ -155,13 +155,14 @@ class ModernBar(Flowable):
             self.canv.roundRect(0, 0, fill_width, self.height, 3, fill=1, stroke=0)
 
 styles = getSampleStyleSheet()
+# GÜNCELLEME: Uzun kelimelerin PDF'i çökertmesini engellemek için wordWrap='CJK' zırhı eklendi
 header_style = ParagraphStyle('Header', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=14, textColor=colors.HexColor("#1A365D"), alignment=1, spaceAfter=5)
 sub_header_style = ParagraphStyle('SubHeader', parent=styles['Normal'], fontName='Helvetica', fontSize=10, textColor=colors.grey, alignment=1, spaceAfter=20)
 title_style = ParagraphStyle('ModernTitle', parent=styles['Title'], fontName='Helvetica-Bold', fontSize=16, textColor=colors.HexColor("#2C3E50"), spaceAfter=10)
 info_style = ParagraphStyle('Info', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor("#E84C0F"), spaceAfter=15)
-cell_style = ParagraphStyle('Cell', parent=styles['Normal'], fontName='Helvetica', fontSize=9, alignment=1)
-cell_style_left = ParagraphStyle('CellLeft', parent=styles['Normal'], fontName='Helvetica', fontSize=9, alignment=0)
-header_cell_style = ParagraphStyle('HeaderCell', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.whitesmoke, alignment=1)
+cell_style = ParagraphStyle('Cell', parent=styles['Normal'], fontName='Helvetica', fontSize=9, alignment=1, wordWrap='CJK')
+cell_style_left = ParagraphStyle('CellLeft', parent=styles['Normal'], fontName='Helvetica', fontSize=9, alignment=0, wordWrap='CJK')
+header_cell_style = ParagraphStyle('HeaderCell', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.whitesmoke, alignment=1, wordWrap='CJK')
 
 def build_pdf_doc(elements, is_landscape=False):
     buffer = io.BytesIO()
@@ -206,22 +207,42 @@ def create_landscape_class_pdf(veri):
     df_liste = veri['df_liste'].copy()
     elements.append(Paragraph("<b>Detailed Student List & Scores</b>", styles['Heading4']))
     elements.append(Spacer(1, 5))
-    col_count = len(df_liste.columns)
-    base_widths = {'Student ID': 70, 'Name Surname': 140, 'Booklet': 40, 'Status': 60, 'Total Score': 50}
-    kalan_genislik = 782 - sum(base_widths.values())
-    skill_col_width = kalan_genislik / max(1, col_count - 5)
-    col_widths = [base_widths.get(c, skill_col_width) for c in df_liste.columns]
     
-    tablo_verisi = [[Paragraph(c, header_cell_style) for c in df_liste.columns]]
+    # GÜNCELLEME: Auto-Scaling (Akıllı Daraltma) Algoritması
+    col_count = len(df_liste.columns)
+    if col_count <= 8:
+        b_widths = {'Student ID': 70, 'Name Surname': 140, 'Booklet': 40, 'Status': 60, 'Total Score': 50}
+        f_size, h_f_size = 9, 10
+    elif col_count <= 14:
+        b_widths = {'Student ID': 60, 'Name Surname': 120, 'Booklet': 35, 'Status': 50, 'Total Score': 45}
+        f_size, h_f_size = 7, 8
+    elif col_count <= 20:
+        b_widths = {'Student ID': 50, 'Name Surname': 100, 'Booklet': 30, 'Status': 40, 'Total Score': 40}
+        f_size, h_f_size = 6, 7
+    else:
+        # 20'den fazla sütun varsa mikroskobik boyuta ve sıkışık genişliğe geçer
+        b_widths = {'Student ID': 45, 'Name Surname': 85, 'Booklet': 25, 'Status': 35, 'Total Score': 35}
+        f_size, h_f_size = 5, 6
+        
+    dyn_h = ParagraphStyle('DH', fontName='Helvetica-Bold', fontSize=h_f_size, textColor=colors.whitesmoke, alignment=1, wordWrap='CJK')
+    dyn_c = ParagraphStyle('DC', fontName='Helvetica', fontSize=f_size, alignment=1, wordWrap='CJK')
+    dyn_c_left = ParagraphStyle('DCL', fontName='Helvetica', fontSize=f_size, alignment=0, wordWrap='CJK')
+
+    kalan_genislik = 782 - sum(b_widths.values())
+    skill_col_width = kalan_genislik / max(1, col_count - 5)
+    col_widths = [b_widths.get(c, skill_col_width) for c in df_liste.columns]
+    
+    tablo_verisi = [[Paragraph(c, dyn_h) for c in df_liste.columns]]
     for _, row in df_liste.iterrows():
         row_data = []
         for c_name in df_liste.columns:
             c_text = tr_to_eng(str(row[c_name]))
-            c_style = cell_style_left if c_name == 'Name Surname' else cell_style
+            c_style = dyn_c_left if c_name == 'Name Surname' else dyn_c
             row_data.append(Paragraph(c_text, c_style))
         tablo_verisi.append(row_data)
+        
     l_table = Table(tablo_verisi, colWidths=col_widths, repeatRows=1)
-    l_style = [('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1A365D")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey), ('BOTTOMPADDING', (0,0), (-1,0), 8), ('TOPPADDING', (0,0), (-1,0), 8)]
+    l_style = [('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1A365D")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey), ('BOTTOMPADDING', (0,0), (-1,0), 6), ('TOPPADDING', (0,0), (-1,0), 6)]
     for i in range(1, len(tablo_verisi)):
         if i % 2 == 0: l_style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor("#F8F9F9")))
     l_table.setStyle(TableStyle(l_style))
@@ -949,7 +970,7 @@ else:
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ
+    # 5. HOCA VERİ GİRİŞ PANELİ 
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
         st.subheader("📝 Hızlı Veri Giriş Terminali")
@@ -1151,12 +1172,9 @@ else:
                                         v1 = df_to_save.at[idx, c1]
                                         v2 = df_to_save.at[idx, c2]
                                         
-                                        has_v3 = False
-                                        v3 = 0.0
-                                        if c3:
-                                            v3_raw = str(girilen_notlar_df.at[idx, c3]).strip() if c3 in girilen_notlar_df.columns else ""
-                                            has_v3 = v3_raw not in ["", "nan", "None", "<NA>"]
-                                            v3 = df_to_save.at[idx, c3]
+                                        v3_raw = str(girilen_notlar_df.at[idx, c3]).strip() if c3 in girilen_notlar_df.columns else ""
+                                        has_v3 = v3_raw not in ["", "nan", "None", "<NA>"]
+                                        v3 = df_to_save.at[idx, c3] if c3 in max_puan_sozlugu else 0.0
                                         
                                         if abs(v1 - v2) > tolerans:
                                             if not has_v3 and c3 in max_puan_sozlugu:
