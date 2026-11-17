@@ -5,7 +5,7 @@ import psycopg2
 import json
 import io
 import hashlib
-from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Flowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
@@ -77,7 +77,7 @@ def get_db_backup_excel():
     return buffer
 
 # ==========================================
-# PDF RAPORLAMA FONKSİYONLARI 
+# BİREYSEL KARNE (DİKEY PDF) FONKSİYONLARI 
 # ==========================================
 def tr_to_eng(text):
     if not isinstance(text, str): return str(text)
@@ -113,81 +113,12 @@ cell_style = ParagraphStyle('Cell', parent=styles['Normal'], fontName='Helvetica
 cell_style_left = ParagraphStyle('CellLeft', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=0, wordWrap='CJK')
 header_cell_style = ParagraphStyle('HeaderCell', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.whitesmoke, alignment=1, wordWrap='CJK')
 
-# GÜNCELLEME: Dinamik Boyut Kabul Eden DocTemplate
-def build_pdf_doc(elements, is_landscape=False, custom_size=None):
+def build_pdf_doc(elements):
     buffer = io.BytesIO()
-    if custom_size:
-        page_format = custom_size
-    else:
-        page_format = landscape(A4) if is_landscape else A4
-        
-    doc = SimpleDocTemplate(buffer, pagesize=page_format, rightMargin=30, leftMargin=30, topMargin=40, bottomMargin=30)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=40, bottomMargin=30)
     doc.build(elements)
     buffer.seek(0)
     return buffer
-
-def create_landscape_class_pdf(veri):
-    elements = []
-    elements.append(Paragraph("KTO KARATAY UNIVERSITY", header_style))
-    elements.append(Paragraph("School of Foreign Languages | Testing Office", sub_header_style))
-    elements.append(Paragraph(tr_to_eng(veri['baslik']), title_style))
-    elements.append(Paragraph(tr_to_eng(veri['alt_baslik']), info_style))
-    
-    kpi_df = veri['df_kpi']
-    kpi_data = [[Paragraph("Metric", header_cell_style), Paragraph("Value", header_cell_style)]]
-    for _, row in kpi_df.iterrows(): kpi_data.append([Paragraph(tr_to_eng(str(row['Metric'])), cell_style_left), Paragraph(str(row['Value']), cell_style)])
-    kpi_table = Table(kpi_data, colWidths=[120, 100])
-    kpi_table.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1A365D")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BOTTOMPADDING', (0,0), (-1,-1), 8), ('TOPPADDING', (0,0), (-1,-1), 8), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey), ('BACKGROUND', (0,1), (-1,-1), colors.HexColor("#F8F9F9"))]))
-    
-    skills_data = [[Paragraph("Section / Part", header_cell_style), Paragraph("Objectives", header_cell_style), Paragraph("Avg", header_cell_style), Paragraph("Max", header_cell_style), Paragraph("Performance", header_cell_style)]]
-    for b_dict in veri['beceri_listesi']:
-        bar = ModernBar(130, 10, b_dict['yuzde'])
-        skills_data.append([Paragraph(tr_to_eng(b_dict['isim']), cell_style_left), Paragraph(tr_to_eng(b_dict.get('kazanim', '')), cell_style_left), Paragraph(f"{b_dict['ort']:.1f}", cell_style), Paragraph(str(b_dict['max']), cell_style), bar])
-    
-    skill_table = Table(skills_data, colWidths=[110, 180, 40, 40, 140])
-    s_style = [('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1A365D")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey)]
-    for i in range(1, len(skills_data)):
-        if i % 2 == 0: s_style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor("#F8F9F9")))
-    skill_table.setStyle(TableStyle(s_style))
-    
-    kapsayici_tablo = Table([[kpi_table, skill_table]], colWidths=[240, 542])
-    kapsayici_tablo.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)]))
-    elements.extend([kapsayici_tablo, Spacer(1, 20)])
-    
-    df_liste = veri['df_liste'].copy()
-    elements.append(Paragraph("<b>Detailed Student List & Scores</b>", styles['Heading4']))
-    elements.append(Spacer(1, 5))
-    
-    # GÜNCELLEME: DİNAMİK GENİŞ EKRAN (WIDESCREEN) HESAPLAMASI
-    col_count = len(df_liste.columns)
-    base_widths = {'Student ID': 70, 'Name Surname': 140, 'Booklet': 40, 'Status': 60, 'Total Score': 50}
-    min_skill_width = 45 # Her bir skill sütunu için garanti edilen alan
-    
-    required_width = sum(base_widths.values()) + (max(1, col_count - 5) * min_skill_width) + 60 # 60 = Sağ/Sol Margins
-    page_width = max(842, required_width) # 842 = A4 Yatay min.
-    custom_size = (page_width, 595) # 595 = A4 Yükseklik (Scroll edilebilir yatay PDF)
-    
-    kalan_genislik = page_width - 60 - sum(base_widths.values())
-    skill_col_width = kalan_genislik / max(1, col_count - 5)
-    col_widths = [base_widths.get(c, skill_col_width) for c in df_liste.columns]
-    
-    tablo_verisi = [[Paragraph(c, header_cell_style) for c in df_liste.columns]]
-    for _, row in df_liste.iterrows():
-        row_data = []
-        for c_name in df_liste.columns:
-            c_text = tr_to_eng(str(row[c_name]))
-            c_style = cell_style_left if c_name == 'Name Surname' else cell_style
-            row_data.append(Paragraph(c_text, c_style))
-        tablo_verisi.append(row_data)
-        
-    l_table = Table(tablo_verisi, colWidths=col_widths, repeatRows=1)
-    l_style = [('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1A365D")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey), ('BOTTOMPADDING', (0,0), (-1,0), 8), ('TOPPADDING', (0,0), (-1,0), 8)]
-    for i in range(1, len(tablo_verisi)):
-        if i % 2 == 0: l_style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor("#F8F9F9")))
-    l_table.setStyle(TableStyle(l_style))
-    elements.append(l_table)
-    
-    return build_pdf_doc(elements, custom_size=custom_size)
 
 def create_modern_pdf(rapor_verileri):
     elements = []
@@ -234,7 +165,7 @@ def create_modern_pdf(rapor_verileri):
                 tablo.setStyle(TableStyle(t_style))
                 elements.extend([tablo, Spacer(1, 20)])
         if idx < len(rapor_verileri) - 1: elements.append(PageBreak())
-    return build_pdf_doc(elements, is_landscape=False)
+    return build_pdf_doc(elements)
 
 # ==========================================
 # GİRİŞ KAPISI VE OTURUM
@@ -575,7 +506,7 @@ else:
                 "🎯 Madde Ayırt Edicilik (Item Discrimination)", 
                 "⚖️ Puanlayıcı Güvenirliği (Inter-Rater Reliability)",
                 "👤 Bireysel Karneler",
-                "🏫 Sınıf / Şube Raporu",
+                "🏫 Sınıf / Şube Raporu (Excel Formatı)",
                 "📡 Canlı Sınav Takip Radarı",
                 "📥 OBS Excel Çıktısı"
             ], horizontal=True)
@@ -822,7 +753,8 @@ else:
                                         st.success("PDF başarıyla oluşturuldu!")
                                         st.download_button("📥 PDF Olarak İndir", data=pdf_buf, file_name=f"{sec_ogr}_ReportCard.pdf", mime="application/pdf")
             
-            elif rapor_kapsami == "🏫 Sınıf / Şube Raporu":
+            # GÜNCELLEME: Çökmeyen Sınıf Raporu (Sadece Excel Dışa Aktarımı)
+            elif rapor_kapsami == "🏫 Sınıf / Şube Raporu (Excel Formatı)":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
                 sinavlar = [r[0] for r in cur.fetchall()]
                 if not sinavlar: st.warning("Kayıtlı sınav yok.")
@@ -873,19 +805,40 @@ else:
                         
                         c_btn1, c_btn2 = st.columns(2)
                         with c_btn1:
-                            if st.button("📊 Sınıf Raporu PDF Oluştur (Yatay)", type="primary"):
-                                kpi_df = pd.DataFrame({"Metric": ["Class Average", "Median", "Highest Score", "Lowest Score", "Active Students"], "Value": [f"{df_aktif['Sınav Notu'].mean():.2f}" if not df_aktif.empty else "0", f"{df_aktif['Sınav Notu'].median():.2f}" if not df_aktif.empty else "0", f"{df_aktif['Sınav Notu'].max():.2f}" if not df_aktif.empty else "0", f"{df_aktif['Sınav Notu'].min():.2f}" if not df_aktif.empty else "0", str(len(df_aktif))]})
-                                df_pdf_liste = df_s[cols_to_show].copy()
-                                df_pdf_liste["Sınava Girdi"] = df_pdf_liste["Sınava Girdi"].map({True: "Attended", False: "Absent"})
-                                df_pdf_liste = df_pdf_liste.rename(columns={"Ogrenci_No": "Student ID", "Ad_Soyad": "Name Surname", "Kitapçık": "Booklet", "Sınava Girdi": "Status", "Sınav Notu": "Total Score"})
-                                veri = {'baslik': f"{sec_sinav} - Class Performance Report", 'alt_baslik': f"Class: {sec_sube}", 'df_kpi': kpi_df, 'beceri_listesi': beceri_listesi_pdf, 'df_liste': df_pdf_liste}
-                                pdf_buf = create_landscape_class_pdf(veri)
-                                if pdf_buf:
-                                    st.success("Sınıf raporu oluşturuldu!")
-                                    st.download_button("📥 Yatay PDF İndir", data=pdf_buf, file_name=f"{sec_sube}_ClassReport.pdf", mime="application/pdf")
+                            if st.button("📊 Sınıf Raporunu Excel Olarak İndir (Tavsiye Edilen)", type="primary"):
+                                buffer = io.BytesIO()
+                                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                                    # Sayfa 1: Öğrenci Notları
+                                    df_excel_liste = df_s[cols_to_show].copy()
+                                    df_excel_liste["Sınava Girdi"] = df_excel_liste["Sınava Girdi"].map({True: "Katıldı", False: "Girmedi"})
+                                    df_excel_liste = df_excel_liste.rename(columns={"Ogrenci_No": "Öğrenci No", "Ad_Soyad": "Ad Soyad", "Sınav Notu": "Toplam Not"})
+                                    df_excel_liste.to_excel(writer, sheet_name="Öğrenci Notları", index=False)
+                                    
+                                    # Sayfa 2: İstatistikler
+                                    kpi_df = pd.DataFrame({
+                                        "Metrik": ["Sınıf Ortalaması", "Medyan", "En Yüksek Not", "En Düşük Not", "Aktif Öğrenci Sayısı"], 
+                                        "Değer": [
+                                            f"{df_aktif['Sınav Notu'].mean():.2f}" if not df_aktif.empty else "0", 
+                                            f"{df_aktif['Sınav Notu'].median():.2f}" if not df_aktif.empty else "0", 
+                                            f"{df_aktif['Sınav Notu'].max():.2f}" if not df_aktif.empty else "0", 
+                                            f"{df_aktif['Sınav Notu'].min():.2f}" if not df_aktif.empty else "0", 
+                                            str(len(df_aktif))
+                                        ]
+                                    })
+                                    kpi_df.to_excel(writer, sheet_name="İstatistikler", index=False)
+                                    
+                                    # Sayfa 3: Beceriler
+                                    beceri_df = pd.DataFrame(beceri_listesi_pdf)
+                                    if not beceri_df.empty:
+                                        beceri_df = beceri_df.rename(columns={"isim": "Bölüm", "kazanim": "Kazanım", "ort": "Sınıf Ortalaması", "max": "Max Puan", "yuzde": "Başarı Yüzdesi (%)"})
+                                        beceri_df.to_excel(writer, sheet_name="Beceri Analizi", index=False)
+                                        
+                                buffer.seek(0)
+                                st.success("Sınıf raporu Excel olarak hazırlandı! Hiçbir veri kaybı olmadan tüm geniş sütunları inceleyebilirsiniz.")
+                                st.download_button("📥 Excel Raporunu İndir", data=buffer, file_name=f"{sec_sube}_Sinif_Raporu.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                         
                         with c_btn2:
-                            if st.button("📦 Tüm Sınıfın Toplu Karnelerini Oluştur"):
+                            if st.button("📦 Tüm Sınıfın Toplu Karnelerini Oluştur (PDF)"):
                                 toplu_veriler = []
                                 for _, row in df_aktif.sort_values(by="Ad_Soyad").iterrows(): 
                                     ogr_no = row.get('Ogrenci_No', '')
@@ -896,7 +849,18 @@ else:
                                     for c, v_dict in tos_dict.items():
                                         mp = v_dict['max']
                                         if c in row: b_yuzdeleri[c] = (row[c]/mp*100) if mp>0 else 0
-                                    df_pdf = pd.DataFrame({"Section / Skill": list(tos_dict.keys()), "Objectives": [tos_dict[c]['kazanim'] for c in tos_dict.keys()], "Score Achieved": [row.get(c, 0) for c in tos_dict.keys()], "Max Score": [tos_dict[c]['max'] for c in tos_dict.keys()]})
+                                    
+                                    safe_scores = []
+                                    for c in tos_dict.keys():
+                                        try: safe_scores.append(float(str(row.get(c, 0)).replace(',', '.')))
+                                        except: safe_scores.append(0.0)
+                                        
+                                    df_pdf = pd.DataFrame({
+                                        "Section / Skill": list(tos_dict.keys()), 
+                                        "Objectives": [tos_dict[c]['kazanim'] for c in tos_dict.keys()], 
+                                        "Score Achieved": safe_scores, 
+                                        "Max Score": [tos_dict[c]['max'] for c in tos_dict.keys()]
+                                    })
                                     toplu_veriler.append({'baslik': f"{sec_sinav} - Individual Report Card", 'alt_baslik': f"Student: {ogr_no} - {ogr_ad} | Booklet: {bkl} | Total Score: {toplam}", 'df_list': [("Skill & Objectives Details", df_pdf)], 'beceri_grafik_verisi': b_yuzdeleri})
                                 if toplu_veriler:
                                     pdf_buf = create_modern_pdf(toplu_veriler)
