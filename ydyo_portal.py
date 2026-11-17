@@ -20,67 +20,17 @@ def kurumsal_tema_uygula():
     <style>
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Jost:wght@400;500;600&display=swap');
 
-    /* Genel Font Ailesi - Sınav kitapçıklarıyla birebir uyum (DM Sans & Jost) */
-    html, body, [class*="css"] {
-        font-family: 'DM Sans', sans-serif !important;
-    }
-    h1, h2, h3, h4, h5, h6 {
-        font-family: 'Jost', sans-serif !important;
-        color: #1A365D !important; /* KTO Karatay Laciverti */
-    }
-
-    /* Ana Arkaplan */
-    .stApp {
-        background-color: #F8F9FA;
-    }
-
-    /* Sidebar (Sol Menü) - KTO Laciverti */
-    [data-testid="stSidebar"] {
-        background-color: #1A365D;
-    }
-    [data-testid="stSidebar"] * {
-        color: #FFFFFF !important;
-    }
-
-    /* Birincil Butonlar (Primary) - KTO Turuncusu */
-    button[kind="primary"] {
-        background-color: #E84C0F !important;
-        border-color: #E84C0F !important;
-        color: white !important;
-        font-weight: 600 !important;
-        border-radius: 6px !important;
-        transition: all 0.3s ease;
-    }
-    button[kind="primary"]:hover {
-        background-color: #CC400A !important;
-        border-color: #CC400A !important;
-        transform: translateY(-2px);
-    }
-
-    /* İkincil Butonlar (Secondary) */
-    button[kind="secondary"] {
-        border-color: #1A365D !important;
-        color: #1A365D !important;
-        border-radius: 6px !important;
-    }
-    button[kind="secondary"]:hover {
-        border-color: #E84C0F !important;
-        color: #E84C0F !important;
-    }
-
-    /* Metrik Kartları (Rakamlar) */
-    [data-testid="stMetricValue"] {
-        color: #E84C0F !important; /* Turuncu Vurgu */
-        font-family: 'Jost', sans-serif !important;
-        font-weight: 600;
-    }
-
-    /* DataFrame Tabloları */
-    [data-testid="stDataFrame"] {
-        border-radius: 8px;
-        overflow: hidden;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-    }
+    html, body, [class*="css"] { font-family: 'DM Sans', sans-serif !important; }
+    h1, h2, h3, h4, h5, h6 { font-family: 'Jost', sans-serif !important; color: #1A365D !important; }
+    .stApp { background-color: #F8F9FA; }
+    [data-testid="stSidebar"] { background-color: #1A365D; }
+    [data-testid="stSidebar"] * { color: #FFFFFF !important; }
+    button[kind="primary"] { background-color: #E84C0F !important; border-color: #E84C0F !important; color: white !important; font-weight: 600 !important; border-radius: 6px !important; transition: all 0.3s ease; }
+    button[kind="primary"]:hover { background-color: #CC400A !important; border-color: #CC400A !important; transform: translateY(-2px); }
+    button[kind="secondary"] { border-color: #1A365D !important; color: #1A365D !important; border-radius: 6px !important; }
+    button[kind="secondary"]:hover { border-color: #E84C0F !important; color: #E84C0F !important; }
+    [data-testid="stMetricValue"] { color: #E84C0F !important; font-family: 'Jost', sans-serif !important; font-weight: 600; }
+    [data-testid="stDataFrame"] { border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
     </style>
     """, unsafe_allow_html=True)
 
@@ -155,18 +105,22 @@ class ModernBar(Flowable):
             self.canv.roundRect(0, 0, fill_width, self.height, 3, fill=1, stroke=0)
 
 styles = getSampleStyleSheet()
-# GÜNCELLEME: Uzun kelimelerin PDF'i çökertmesini engellemek için wordWrap='CJK' zırhı eklendi
 header_style = ParagraphStyle('Header', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=14, textColor=colors.HexColor("#1A365D"), alignment=1, spaceAfter=5)
 sub_header_style = ParagraphStyle('SubHeader', parent=styles['Normal'], fontName='Helvetica', fontSize=10, textColor=colors.grey, alignment=1, spaceAfter=20)
 title_style = ParagraphStyle('ModernTitle', parent=styles['Title'], fontName='Helvetica-Bold', fontSize=16, textColor=colors.HexColor("#2C3E50"), spaceAfter=10)
 info_style = ParagraphStyle('Info', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor("#E84C0F"), spaceAfter=15)
-cell_style = ParagraphStyle('Cell', parent=styles['Normal'], fontName='Helvetica', fontSize=9, alignment=1, wordWrap='CJK')
-cell_style_left = ParagraphStyle('CellLeft', parent=styles['Normal'], fontName='Helvetica', fontSize=9, alignment=0, wordWrap='CJK')
-header_cell_style = ParagraphStyle('HeaderCell', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.whitesmoke, alignment=1, wordWrap='CJK')
+cell_style = ParagraphStyle('Cell', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1, wordWrap='CJK')
+cell_style_left = ParagraphStyle('CellLeft', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=0, wordWrap='CJK')
+header_cell_style = ParagraphStyle('HeaderCell', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.whitesmoke, alignment=1, wordWrap='CJK')
 
-def build_pdf_doc(elements, is_landscape=False):
+# GÜNCELLEME: Dinamik Boyut Kabul Eden DocTemplate
+def build_pdf_doc(elements, is_landscape=False, custom_size=None):
     buffer = io.BytesIO()
-    page_format = landscape(A4) if is_landscape else A4
+    if custom_size:
+        page_format = custom_size
+    else:
+        page_format = landscape(A4) if is_landscape else A4
+        
     doc = SimpleDocTemplate(buffer, pagesize=page_format, rightMargin=30, leftMargin=30, topMargin=40, bottomMargin=30)
     doc.build(elements)
     buffer.seek(0)
@@ -197,57 +151,43 @@ def create_landscape_class_pdf(veri):
     skill_table.setStyle(TableStyle(s_style))
     
     kapsayici_tablo = Table([[kpi_table, skill_table]], colWidths=[240, 542])
-    kapsayici_tablo.setStyle(TableStyle([
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('LEFTPADDING', (0,0), (-1,-1), 0),
-        ('RIGHTPADDING', (0,0), (-1,-1), 0)
-    ]))
+    kapsayici_tablo.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'TOP'), ('LEFTPADDING', (0,0), (-1,-1), 0), ('RIGHTPADDING', (0,0), (-1,-1), 0)]))
     elements.extend([kapsayici_tablo, Spacer(1, 20)])
     
     df_liste = veri['df_liste'].copy()
     elements.append(Paragraph("<b>Detailed Student List & Scores</b>", styles['Heading4']))
     elements.append(Spacer(1, 5))
     
-    # GÜNCELLEME: Auto-Scaling (Akıllı Daraltma) Algoritması
+    # GÜNCELLEME: DİNAMİK GENİŞ EKRAN (WIDESCREEN) HESAPLAMASI
     col_count = len(df_liste.columns)
-    if col_count <= 8:
-        b_widths = {'Student ID': 70, 'Name Surname': 140, 'Booklet': 40, 'Status': 60, 'Total Score': 50}
-        f_size, h_f_size = 9, 10
-    elif col_count <= 14:
-        b_widths = {'Student ID': 60, 'Name Surname': 120, 'Booklet': 35, 'Status': 50, 'Total Score': 45}
-        f_size, h_f_size = 7, 8
-    elif col_count <= 20:
-        b_widths = {'Student ID': 50, 'Name Surname': 100, 'Booklet': 30, 'Status': 40, 'Total Score': 40}
-        f_size, h_f_size = 6, 7
-    else:
-        # 20'den fazla sütun varsa mikroskobik boyuta ve sıkışık genişliğe geçer
-        b_widths = {'Student ID': 45, 'Name Surname': 85, 'Booklet': 25, 'Status': 35, 'Total Score': 35}
-        f_size, h_f_size = 5, 6
-        
-    dyn_h = ParagraphStyle('DH', fontName='Helvetica-Bold', fontSize=h_f_size, textColor=colors.whitesmoke, alignment=1, wordWrap='CJK')
-    dyn_c = ParagraphStyle('DC', fontName='Helvetica', fontSize=f_size, alignment=1, wordWrap='CJK')
-    dyn_c_left = ParagraphStyle('DCL', fontName='Helvetica', fontSize=f_size, alignment=0, wordWrap='CJK')
-
-    kalan_genislik = 782 - sum(b_widths.values())
-    skill_col_width = kalan_genislik / max(1, col_count - 5)
-    col_widths = [b_widths.get(c, skill_col_width) for c in df_liste.columns]
+    base_widths = {'Student ID': 70, 'Name Surname': 140, 'Booklet': 40, 'Status': 60, 'Total Score': 50}
+    min_skill_width = 45 # Her bir skill sütunu için garanti edilen alan
     
-    tablo_verisi = [[Paragraph(c, dyn_h) for c in df_liste.columns]]
+    required_width = sum(base_widths.values()) + (max(1, col_count - 5) * min_skill_width) + 60 # 60 = Sağ/Sol Margins
+    page_width = max(842, required_width) # 842 = A4 Yatay min.
+    custom_size = (page_width, 595) # 595 = A4 Yükseklik (Scroll edilebilir yatay PDF)
+    
+    kalan_genislik = page_width - 60 - sum(base_widths.values())
+    skill_col_width = kalan_genislik / max(1, col_count - 5)
+    col_widths = [base_widths.get(c, skill_col_width) for c in df_liste.columns]
+    
+    tablo_verisi = [[Paragraph(c, header_cell_style) for c in df_liste.columns]]
     for _, row in df_liste.iterrows():
         row_data = []
         for c_name in df_liste.columns:
             c_text = tr_to_eng(str(row[c_name]))
-            c_style = dyn_c_left if c_name == 'Name Surname' else dyn_c
+            c_style = cell_style_left if c_name == 'Name Surname' else cell_style
             row_data.append(Paragraph(c_text, c_style))
         tablo_verisi.append(row_data)
         
     l_table = Table(tablo_verisi, colWidths=col_widths, repeatRows=1)
-    l_style = [('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1A365D")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey), ('BOTTOMPADDING', (0,0), (-1,0), 6), ('TOPPADDING', (0,0), (-1,0), 6)]
+    l_style = [('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1A365D")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey), ('BOTTOMPADDING', (0,0), (-1,0), 8), ('TOPPADDING', (0,0), (-1,0), 8)]
     for i in range(1, len(tablo_verisi)):
         if i % 2 == 0: l_style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor("#F8F9F9")))
     l_table.setStyle(TableStyle(l_style))
     elements.append(l_table)
-    return build_pdf_doc(elements, is_landscape=True)
+    
+    return build_pdf_doc(elements, custom_size=custom_size)
 
 def create_modern_pdf(rapor_verileri):
     elements = []
@@ -671,10 +611,8 @@ else:
                                 if "Sınav Notu" in df_not.columns:
                                     okunan_ogrenci = len(df_not[df_not["Sınav Notu"] > 0])
                             
-                            if toplam_ogrenci > 0:
-                                yuzde = min(int((okunan_ogrenci / toplam_ogrenci) * 100), 100)
-                            else:
-                                yuzde = 0
+                            if toplam_ogrenci > 0: yuzde = min(int((okunan_ogrenci / toplam_ogrenci) * 100), 100)
+                            else: yuzde = 0
                                 
                             col_text, col_bar = st.columns([1, 3])
                             col_text.write(f"**{sube}** ({hoca_isim or k_adi})")
@@ -905,7 +843,7 @@ else:
                         
                         if "Sınava Girdi" not in df_s.columns: df_s["Sınava Girdi"] = True
                         if "Kitapçık" not in df_s.columns: df_s["Kitapçık"] = "A"
-                        df_aktif = df_s[df_s["Sınava Girdi"] == True]
+                        df_aktif = df_s[df_s["Sınava Girdi"] == True].copy()
                         
                         for c in tos_dict.keys():
                             if c in df_aktif.columns:
@@ -1172,7 +1110,7 @@ else:
                                         v1 = df_to_save.at[idx, c1]
                                         v2 = df_to_save.at[idx, c2]
                                         
-                                        v3_raw = str(girilen_notlar_df.at[idx, c3]).strip() if c3 in girilen_notlar_df.columns else ""
+                                        v3_raw = str(girilen_notlar_df.at[idx, c3]).strip() if c3 in max_puan_sozlugu else ""
                                         has_v3 = v3_raw not in ["", "nan", "None", "<NA>"]
                                         v3 = df_to_save.at[idx, c3] if c3 in max_puan_sozlugu else 0.0
                                         
