@@ -5,7 +5,7 @@ import psycopg2
 import json
 import io
 import hashlib
-from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Flowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
@@ -868,7 +868,7 @@ else:
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ (YAPAY ZEKA EŞLEŞTİRİCİ)
+    # 5. HOCA VERİ GİRİŞ PANELİ 
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
         st.subheader("📝 Hızlı Veri Giriş Terminali")
@@ -916,7 +916,6 @@ else:
             
         max_puan_sozlugu = {f"{r['ana_bolum']} - {r['alt_bolum']}": float(r['max_puan']) for _, r in rubrik_df.iterrows()}
         
-        # GÜNCELLEME: İsimlere Takılmayan "Kelime Bağımsız" Zeki Eşleştirici
         isaretler = [
             ("1. Okuma", "2. Okuma", "3. Okuma"),
             ("(1. Okuma)", "(2. Okuma)", "(3. Okuma)"),
@@ -962,14 +961,19 @@ else:
                 eslesen_isimler.append(isim)
             ort_mesaj = "🤖 **Sistem Zekası Aktif:** Şu okumalar otomatik olarak eşleştirildi ve ortalamaları alınacaktır: " + " | ".join(eslesen_isimler)
 
+        # GÜNCELLEME: Sütun isimlendirme sırasında "nan" (Boş B Kitapçığı Yeri) koruma kalkanı eklendi
         b_map = {}
         reverse_b_map = {}
         for _, row in rubrik_df.iterrows():
             a_name = f"{row['ana_bolum']} - {row['alt_bolum']}"
-            b_karsi = str(row.get('b_grubu_karsiligi', '')).strip()
+            b_karsi_raw = str(row.get('b_grubu_karsiligi', '')).strip()
             
-            if b_karsi and is_multi_booklet:
-                b_name = f"{row['ana_bolum']} - {b_karsi}"
+            # Eğer B kitapçığı yeri Excel'den "nan" olarak geldiyse veya tamamen boşsa, A'nın adını koru
+            if b_karsi_raw.lower() == 'nan' or b_karsi_raw == 'None' or not b_karsi_raw:
+                b_map[a_name] = a_name
+                reverse_b_map[a_name] = a_name
+            elif is_multi_booklet:
+                b_name = f"{row['ana_bolum']} - {b_karsi_raw}"
                 b_map[a_name] = b_name
                 reverse_b_map[b_name] = a_name
             else:
@@ -1048,7 +1052,11 @@ else:
                     
                 elif "B Kitapçığı" in gorunum:
                     df_view = df_view[df_view["Kitapçık"] == "B"].copy()
-                    df_view = df_view.rename(columns=b_map)
+                    
+                    # Güvenli yeniden adlandırma kalkanı
+                    safe_b_map = {k: v for k, v in b_map.items() if k in df_view.columns}
+                    df_view = df_view.rename(columns=safe_b_map)
+                    
                     base_cols = ["Ogrenci_No", "Ad_Soyad", "Sınava Girdi", "Kitapçık", "Sınav Notu"]
                     skill_cols = [c for c in df_view.columns if c not in base_cols]
                     df_view = df_view[base_cols + skill_cols]
@@ -1226,7 +1234,7 @@ else:
                         df_to_save.at[idx, "Sınav Notu"] = 0.0
                         
                 if hatalar: 
-                    st.error("🛑 SİSTEM KAYDI DURDURDU: KURALLAR İHLAL EDİLDİ VEYA MAX PUAN AŞILDI!")
+                    st.error("🛑 SİSTEM KAYDI DURDURDU: KURALLAR İHLALডেম VEYA MAX PUAN AŞILDI!")
                     for h in hatalar: st.warning(h)
                     st.stop()
                     
