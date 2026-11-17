@@ -5,7 +5,7 @@ import psycopg2
 import json
 import io
 import hashlib
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Flowable
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
@@ -753,7 +753,6 @@ else:
                                         st.success("PDF başarıyla oluşturuldu!")
                                         st.download_button("📥 PDF Olarak İndir", data=pdf_buf, file_name=f"{sec_ogr}_ReportCard.pdf", mime="application/pdf")
             
-            # GÜNCELLEME: Çökmeyen Sınıf Raporu (Sadece Excel Dışa Aktarımı)
             elif rapor_kapsami == "🏫 Sınıf / Şube Raporu (Excel Formatı)":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
                 sinavlar = [r[0] for r in cur.fetchall()]
@@ -808,13 +807,11 @@ else:
                             if st.button("📊 Sınıf Raporunu Excel Olarak İndir (Tavsiye Edilen)", type="primary"):
                                 buffer = io.BytesIO()
                                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                                    # Sayfa 1: Öğrenci Notları
                                     df_excel_liste = df_s[cols_to_show].copy()
                                     df_excel_liste["Sınava Girdi"] = df_excel_liste["Sınava Girdi"].map({True: "Katıldı", False: "Girmedi"})
                                     df_excel_liste = df_excel_liste.rename(columns={"Ogrenci_No": "Öğrenci No", "Ad_Soyad": "Ad Soyad", "Sınav Notu": "Toplam Not"})
                                     df_excel_liste.to_excel(writer, sheet_name="Öğrenci Notları", index=False)
                                     
-                                    # Sayfa 2: İstatistikler
                                     kpi_df = pd.DataFrame({
                                         "Metrik": ["Sınıf Ortalaması", "Medyan", "En Yüksek Not", "En Düşük Not", "Aktif Öğrenci Sayısı"], 
                                         "Değer": [
@@ -827,7 +824,6 @@ else:
                                     })
                                     kpi_df.to_excel(writer, sheet_name="İstatistikler", index=False)
                                     
-                                    # Sayfa 3: Beceriler
                                     beceri_df = pd.DataFrame(beceri_listesi_pdf)
                                     if not beceri_df.empty:
                                         beceri_df = beceri_df.rename(columns={"isim": "Bölüm", "kazanim": "Kazanım", "ort": "Sınıf Ortalaması", "max": "Max Puan", "yuzde": "Başarı Yüzdesi (%)"})
@@ -872,7 +868,7 @@ else:
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ 
+    # 5. HOCA VERİ GİRİŞ PANELİ (YAPAY ZEKA EŞLEŞTİRİCİ)
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
         st.subheader("📝 Hızlı Veri Giriş Terminali")
@@ -889,7 +885,6 @@ else:
         acik_sinavlar = [row[0] for row in sinav_data if row[0].split("_")[0] in hocanin_modulleri]
         if not acik_sinavlar: 
             st.error("⚠️ Size tanımlanmış herhangi bir modüle ait aktif sınav bulunmamaktadır.")
-            st.info("Eğer bir sınıfta derse giriyorsanız, lütfen Testing Ofisi (Admin) ile iletişime geçerek atamanızın yapılmasını isteyiniz.")
             st.stop()
             
         sinav_kilit_durumlari = {row[0]: row[1] for row in sinav_data}
@@ -919,6 +914,54 @@ else:
             rubrik_df = pd.read_sql_query("SELECT ana_bolum, alt_bolum, max_puan FROM sinav_tos WHERE sinav_kodu=%s", conn, params=(secilen_islem_sinavi,))
             rubrik_df['b_grubu_karsiligi'] = ""
             
+        max_puan_sozlugu = {f"{r['ana_bolum']} - {r['alt_bolum']}": float(r['max_puan']) for _, r in rubrik_df.iterrows()}
+        
+        # GÜNCELLEME: İsimlere Takılmayan "Kelime Bağımsız" Zeki Eşleştirici
+        isaretler = [
+            ("1. Okuma", "2. Okuma", "3. Okuma"),
+            ("(1. Okuma)", "(2. Okuma)", "(3. Okuma)"),
+            ("1st", "2nd", "3rd"),
+            ("1. Hoca", "2. Hoca", "3. Hoca"),
+            ("(1)", "(2)", "(3)"),
+            ("Okuma 1", "Okuma 2", "Okuma 3"),
+            ("Rater 1", "Rater 2", "Rater 3"),
+            (" 1 ", " 2 ", " 3 "),
+            (" 1", " 2", " 3"),
+            ("1.", "2.", "3.")
+        ]
+        
+        cift_okumalar = []
+        islenenler = set()
+        
+        for c1 in max_puan_sozlugu.keys():
+            if c1 in islenenler: continue
+            
+            c2_match, c3_match = None, None
+            for m1, m2, m3 in isaretler:
+                if m1 in c1:
+                    hedef_c2 = c1.replace(m1, m2)
+                    hedef_c3 = c1.replace(m1, m3)
+                    
+                    if hedef_c2 in max_puan_sozlugu:
+                        c2_match = hedef_c2
+                        if hedef_c3 in max_puan_sozlugu:
+                            c3_match = hedef_c3
+                        break
+                        
+            if c2_match:
+                cift_okumalar.append((c1, c2_match, c3_match))
+                islenenler.update([c1, c2_match])
+                if c3_match: islenenler.add(c3_match)
+                
+        ort_mesaj = None
+        if cift_okumalar:
+            eslesen_isimler = []
+            for c1, c2, c3 in cift_okumalar:
+                isim = f"**{c1.split('-')[-1].strip()}** & **{c2.split('-')[-1].strip()}**"
+                if c3: isim += f" *(Gerekirse {c3.split('-')[-1].strip()})*"
+                eslesen_isimler.append(isim)
+            ort_mesaj = "🤖 **Sistem Zekası Aktif:** Şu okumalar otomatik olarak eşleştirildi ve ortalamaları alınacaktır: " + " | ".join(eslesen_isimler)
+
         b_map = {}
         reverse_b_map = {}
         for _, row in rubrik_df.iterrows():
@@ -1013,6 +1056,8 @@ else:
                 if df_view.empty:
                     st.warning("⚠️ Seçtiğiniz filtreye uygun öğrenci bulunamadı. Lütfen önce 1. Aşamadan öğrencilere o kitapçığı atayıp atamadığınızı kontrol edin.")
                 else:
+                    if ort_mesaj: st.info(ort_mesaj)
+                    
                     col_conf_not = {
                         "Ogrenci_No": st.column_config.TextColumn("Öğrenci No", disabled=True),
                         "Ad_Soyad": st.column_config.TextColumn("Ad Soyad", disabled=True),
@@ -1031,7 +1076,6 @@ else:
                         
                     if kaydet_btn and not is_locked:
                         hatalar = []
-                        max_puan_sozlugu = {f"{r['ana_bolum']} - {r['alt_bolum']}": float(r['max_puan']) for _, r in rubrik_df.iterrows()}
                         
                         if "B Kitapçığı" in gorunum:
                             girilen_notlar_df = girilen_notlar_df.rename(columns=reverse_b_map)
@@ -1039,18 +1083,6 @@ else:
                         df_to_save = df_giris.copy()
                         df_to_save.update(girilen_notlar_df)
                         
-                        cift_okumalar = []
-                        for c1 in max_puan_sozlugu.keys():
-                            if "(1. Okuma)" in c1 or "1st" in c1:
-                                ana_base = c1.split(" - ")[0].replace("(1. Okuma)", "").replace("1st", "").strip()
-                                c2, c3 = None, None
-                                for k in max_puan_sozlugu.keys():
-                                    if "(2. Okuma)" in k or "2nd" in k:
-                                        if k.split(" - ")[0].replace("(2. Okuma)", "").replace("2nd", "").strip() == ana_base: c2 = k
-                                    if "(3. Okuma)" in k or "3rd" in k:
-                                        if k.split(" - ")[0].replace("(3. Okuma)", "").replace("3rd", "").strip() == ana_base: c3 = k
-                                if c2: cift_okumalar.append((c1, c2, c3))
-                                
                         processed_cols = set()
                         for c1, c2, c3 in cift_okumalar:
                             processed_cols.update([c1, c2])
@@ -1070,26 +1102,30 @@ else:
                                     if val > m_puan: hatalar.append(f"**{row.get('Ogrenci_No', '')}**: '{c.split('-')[-1].strip()}' notu ({val}), max ({m_puan}) aşıyor!")
                                     
                                 for c1, c2, c3 in cift_okumalar:
-                                    if c1 in max_puan_sozlugu and c2 in max_puan_sozlugu:
-                                        v1 = df_to_save.at[idx, c1]
-                                        v2 = df_to_save.at[idx, c2]
-                                        
-                                        v3_raw = str(girilen_notlar_df.at[idx, c3]).strip() if c3 in max_puan_sozlugu else ""
+                                    v1 = df_to_save.at[idx, c1]
+                                    v2 = df_to_save.at[idx, c2]
+                                    
+                                    has_v3 = False
+                                    v3 = 0.0
+                                    if c3:
+                                        v3_raw = str(girilen_notlar_df.at[idx, c3]).strip() if c3 in girilen_notlar_df.columns else ""
                                         has_v3 = v3_raw not in ["", "nan", "None", "<NA>"]
-                                        v3 = df_to_save.at[idx, c3] if c3 in max_puan_sozlugu else 0.0
-                                        
-                                        if abs(v1 - v2) > tolerans:
-                                            if not has_v3 and c3 in max_puan_sozlugu:
-                                                hatalar.append(f"**{row.get('Ogrenci_No', '')}**: {c1.split('(')[0].strip()} okumalar arası fark ({abs(v1-v2)}), {tolerans} puanlık toleransı aşıyor! 3. Okuma girilmelidir.")
-                                            elif has_v3:
-                                                diff1 = abs(v3 - v1)
-                                                diff2 = abs(v3 - v2)
-                                                if diff1 < diff2: ogrenci_toplam += (v3 + v1) / 2.0
-                                                elif diff2 < diff1: ogrenci_toplam += (v3 + v2) / 2.0
-                                                else: ogrenci_toplam += (v3 + max(v1, v2)) / 2.0
+                                        v3 = df_to_save.at[idx, c3]
+                                    
+                                    if abs(v1 - v2) > tolerans:
+                                        if not has_v3 and c3 is not None:
+                                            hatalar.append(f"**{row.get('Ogrenci_No', '')}**: {c1.split('-')[-1].strip()} okumalar arası fark ({abs(v1-v2)}), {tolerans} puanlık toleransı aşıyor! 3. Okuma girilmelidir.")
+                                        elif has_v3:
+                                            diff1 = abs(v3 - v1)
+                                            diff2 = abs(v3 - v2)
+                                            if diff1 < diff2: ogrenci_toplam += (v3 + v1) / 2.0
+                                            elif diff2 < diff1: ogrenci_toplam += (v3 + v2) / 2.0
+                                            else: ogrenci_toplam += (v3 + max(v1, v2)) / 2.0
                                         else:
                                             ogrenci_toplam += (v1 + v2) / 2.0
-                                            
+                                    else:
+                                        ogrenci_toplam += (v1 + v2) / 2.0
+                                        
                                 for c in max_puan_sozlugu.keys():
                                     if c not in processed_cols: ogrenci_toplam += df_to_save.at[idx, c]
                                         
@@ -1113,6 +1149,8 @@ else:
             base_cols = ["Ogrenci_No", "Ad_Soyad", "Sınava Girdi", "Sınav Notu"]
             df_view = df_giris[base_cols + skill_cols_in_order].copy()
             
+            if ort_mesaj: st.info(ort_mesaj)
+            
             col_conf_not = {
                 "Ogrenci_No": st.column_config.TextColumn("Öğrenci No", disabled=True),
                 "Ad_Soyad": st.column_config.TextColumn("Ad Soyad", disabled=True),
@@ -1132,23 +1170,10 @@ else:
                 
             if kaydet_btn and not is_locked:
                 hatalar = []
-                max_puan_sozlugu = {f"{r['ana_bolum']} - {r['alt_bolum']}": float(r['max_puan']) for _, r in rubrik_df.iterrows()}
                 
                 df_to_save = df_giris.copy()
                 df_to_save.update(girilen_notlar_df)
                 
-                cift_okumalar = []
-                for c1 in max_puan_sozlugu.keys():
-                    if "(1. Okuma)" in c1 or "1st" in c1:
-                        ana_base = c1.split(" - ")[0].replace("(1. Okuma)", "").replace("1st", "").strip()
-                        c2, c3 = None, None
-                        for k in max_puan_sozlugu.keys():
-                            if "(2. Okuma)" in k or "2nd" in k:
-                                if k.split(" - ")[0].replace("(2. Okuma)", "").replace("2nd", "").strip() == ana_base: c2 = k
-                            if "(3. Okuma)" in k or "3rd" in k:
-                                if k.split(" - ")[0].replace("(3. Okuma)", "").replace("3rd", "").strip() == ana_base: c3 = k
-                        if c2: cift_okumalar.append((c1, c2, c3))
-                        
                 processed_cols = set()
                 for c1, c2, c3 in cift_okumalar:
                     processed_cols.update([c1, c2])
@@ -1168,29 +1193,30 @@ else:
                             if val > m_puan: hatalar.append(f"**{row.get('Ogrenci_No', '')}**: '{c.split('-')[-1].strip()}' notu ({val}), max ({m_puan}) aşıyor!")
                             
                         for c1, c2, c3 in cift_okumalar:
-                            if c1 in max_puan_sozlugu and c2 in max_puan_sozlugu:
-                                v1 = df_to_save.at[idx, c1]
-                                v2 = df_to_save.at[idx, c2]
-                                
-                                has_v3 = False
-                                v3 = 0.0
-                                if c3:
-                                    v3_raw = str(girilen_notlar_df.at[idx, c3]).strip() if c3 in girilen_notlar_df.columns else ""
-                                    has_v3 = v3_raw not in ["", "nan", "None", "<NA>"]
-                                    v3 = df_to_save.at[idx, c3]
-                                
-                                if abs(v1 - v2) > tolerans:
-                                    if not has_v3 and c3 in max_puan_sozlugu:
-                                        hatalar.append(f"**{row.get('Ogrenci_No', '')}**: {c1.split('(')[0].strip()} okumalar arası fark ({abs(v1-v2)}), {tolerans} puanlık toleransı aşıyor! 3. Okuma girilmelidir.")
-                                    elif has_v3:
-                                        diff1 = abs(v3 - v1)
-                                        diff2 = abs(v3 - v2)
-                                        if diff1 < diff2: ogrenci_toplam += (v3 + v1) / 2.0
-                                        elif diff2 < diff1: ogrenci_toplam += (v3 + v2) / 2.0
-                                        else: ogrenci_toplam += (v3 + max(v1, v2)) / 2.0
+                            v1 = df_to_save.at[idx, c1]
+                            v2 = df_to_save.at[idx, c2]
+                            
+                            has_v3 = False
+                            v3 = 0.0
+                            if c3:
+                                v3_raw = str(girilen_notlar_df.at[idx, c3]).strip() if c3 in girilen_notlar_df.columns else ""
+                                has_v3 = v3_raw not in ["", "nan", "None", "<NA>"]
+                                v3 = df_to_save.at[idx, c3]
+                            
+                            if abs(v1 - v2) > tolerans:
+                                if not has_v3 and c3 is not None:
+                                    hatalar.append(f"**{row.get('Ogrenci_No', '')}**: {c1.split('-')[-1].strip()} okumalar arası fark ({abs(v1-v2)}), {tolerans} puanlık toleransı aşıyor! 3. Okuma girilmelidir.")
+                                elif has_v3:
+                                    diff1 = abs(v3 - v1)
+                                    diff2 = abs(v3 - v2)
+                                    if diff1 < diff2: ogrenci_toplam += (v3 + v1) / 2.0
+                                    elif diff2 < diff1: ogrenci_toplam += (v3 + v2) / 2.0
+                                    else: ogrenci_toplam += (v3 + max(v1, v2)) / 2.0
                                 else:
                                     ogrenci_toplam += (v1 + v2) / 2.0
-                                    
+                            else:
+                                ogrenci_toplam += (v1 + v2) / 2.0
+                                
                         for c in max_puan_sozlugu.keys():
                             if c not in processed_cols: ogrenci_toplam += df_to_save.at[idx, c]
                                 
