@@ -834,7 +834,7 @@ else:
                                 st.success("Sınıf raporu Excel olarak hazırlandı! Hiçbir veri kaybı olmadan tüm geniş sütunları inceleyebilirsiniz.")
                                 st.download_button("📥 Excel Raporunu İndir", data=buffer, file_name=f"{sec_sube}_Sinif_Raporu.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                         
-with c_btn2:
+                        with c_btn2:
                             if st.button("📦 Tüm Sınıfın Karnelerini Oluştur (Ayrı PDF - ZIP)"):
                                 if df_aktif.empty:
                                     st.warning("Sınava giren öğrenci bulunmuyor.")
@@ -881,6 +881,8 @@ with c_btn2:
                                         file_name=f"{sec_sube}_{sec_sinav}_Karneler.zip",
                                         mime="application/zip"
                                     )
+
+            cur.close(); conn.close()
 
     # ----------------------------------------------------
     # 5. HOCA VERİ GİRİŞ PANELİ (AUTO-HEAL ZIRHI İLE)
