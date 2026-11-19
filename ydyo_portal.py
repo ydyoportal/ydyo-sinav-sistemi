@@ -4,6 +4,7 @@ import plotly.express as px
 import psycopg2
 import json
 import io
+import zipfile
 import hashlib
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Flowable
@@ -833,39 +834,53 @@ else:
                                 st.success("Sınıf raporu Excel olarak hazırlandı! Hiçbir veri kaybı olmadan tüm geniş sütunları inceleyebilirsiniz.")
                                 st.download_button("📥 Excel Raporunu İndir", data=buffer, file_name=f"{sec_sube}_Sinif_Raporu.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                         
-                        with c_btn2:
-                            if st.button("📦 Tüm Sınıfın Toplu Karnelerini Oluştur (PDF)"):
-                                toplu_veriler = []
-                                for _, row in df_aktif.sort_values(by="Ad_Soyad").iterrows(): 
-                                    ogr_no = row.get('Ogrenci_No', '')
-                                    ogr_ad = row.get('Ad_Soyad', '')
-                                    toplam = row.get('Sınav Notu', 0)
-                                    bkl = row.get('Kitapçık', 'A')
-                                    b_yuzdeleri = {}
-                                    for c, v_dict in tos_dict.items():
-                                        mp = v_dict['max']
-                                        if c in row: b_yuzdeleri[c] = (row[c]/mp*100) if mp>0 else 0
-                                    
-                                    safe_scores = []
-                                    for c in tos_dict.keys():
-                                        try: safe_scores.append(float(str(row.get(c, 0)).replace(',', '.')))
-                                        except: safe_scores.append(0.0)
-                                        
-                                    df_pdf = pd.DataFrame({
-                                        "Section / Skill": list(tos_dict.keys()), 
-                                        "Objectives": [tos_dict[c]['kazanim'] for c in tos_dict.keys()], 
-                                        "Score Achieved": safe_scores, 
-                                        "Max Score": [tos_dict[c]['max'] for c in tos_dict.keys()]
-                                    })
-                                    toplu_veriler.append({'baslik': f"{sec_sinav} - Individual Report Card", 'alt_baslik': f"Student: {ogr_no} - {ogr_ad} | Booklet: {bkl} | Total Score: {toplam}", 'df_list': [("Skill & Objectives Details", df_pdf)], 'beceri_grafik_verisi': b_yuzdeleri})
-                                if toplu_veriler:
-                                    pdf_buf = create_modern_pdf(toplu_veriler)
-                                    if pdf_buf:
-                                        st.success("Toplu karneler oluşturuldu!")
-                                        st.download_button("📥 Tüm Karneleri İndir (Tek PDF)", data=pdf_buf, file_name=f"{sec_sube}_AllReportCards.pdf", mime="application/pdf")
-                                else: st.warning("Sınava giren öğrenci bulunmuyor.")
-
-            cur.close(); conn.close()
+with c_btn2:
+                            if st.button("📦 Tüm Sınıfın Karnelerini Oluştur (Ayrı PDF - ZIP)"):
+                                if df_aktif.empty:
+                                    st.warning("Sınava giren öğrenci bulunmuyor.")
+                                else:
+                                    zip_buffer = io.BytesIO()
+                                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                                        for _, row in df_aktif.sort_values(by="Ad_Soyad").iterrows():
+                                            ogr_no = str(row.get('Ogrenci_No', '')).strip()
+                                            ogr_ad = str(row.get('Ad_Soyad', '')).strip()
+                                            toplam = row.get('Sınav Notu', 0)
+                                            bkl = row.get('Kitapçık', 'A')
+                                            b_yuzdeleri = {}
+                                            for c, v_dict in tos_dict.items():
+                                                mp = v_dict['max']
+                                                if c in row: b_yuzdeleri[c] = (row[c]/mp*100) if mp>0 else 0
+                                            
+                                            safe_scores = []
+                                            for c in tos_dict.keys():
+                                                try: safe_scores.append(float(str(row.get(c, 0)).replace(',', '.')))
+                                                except: safe_scores.append(0.0)
+                                                
+                                            df_pdf = pd.DataFrame({
+                                                "Section / Skill": list(tos_dict.keys()), 
+                                                "Objectives": [tos_dict[c]['kazanim'] for c in tos_dict.keys()], 
+                                                "Score Achieved": safe_scores, 
+                                                "Max Score": [tos_dict[c]['max'] for c in tos_dict.keys()]
+                                            })
+                                            tek_veri = [{
+                                                'baslik': f"{sec_sinav} - Individual Report Card",
+                                                'alt_baslik': f"Student: {ogr_no} - {ogr_ad} | Booklet: {bkl} | Total Score: {toplam}",
+                                                'df_list': [("Skill & Objectives Details", df_pdf)],
+                                                'beceri_grafik_verisi': b_yuzdeleri
+                                            }]
+                                            pdf_buf = create_modern_pdf(tek_veri)
+                                            temiz_ad = tr_to_eng(ogr_ad).replace(" ", "_")
+                                            dosya_adi = f"{ogr_no}_{temiz_ad}_ReportCard.pdf"
+                                            zf.writestr(dosya_adi, pdf_buf.getvalue())
+                                            
+                                    zip_buffer.seek(0)
+                                    st.success(f"{len(df_aktif)} öğrencinin karnesi ayrı PDF'ler halinde paketlendi!")
+                                    st.download_button(
+                                        "📥 Tüm Karneleri İndir (ZIP)",
+                                        data=zip_buffer,
+                                        file_name=f"{sec_sube}_{sec_sinav}_Karneler.zip",
+                                        mime="application/zip"
+                                    )
 
     # ----------------------------------------------------
     # 5. HOCA VERİ GİRİŞ PANELİ (AUTO-HEAL ZIRHI İLE)
