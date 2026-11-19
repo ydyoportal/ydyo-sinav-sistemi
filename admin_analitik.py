@@ -12,17 +12,14 @@ from rapor_motoru import (
 
 def _kpi_cards_html(items):
     cols = len(items)
-    cards = ""
-    for lbl, val, is_accent in items:
-        cls = "c-kpi-card accent" if is_accent else "c-kpi-card"
-        cards += f"""
-        <div class="{cls}">
-            <div class="c-kpi-lbl">{lbl}</div>
-            <div class="c-kpi-val">{val}</div>
-        </div>
-        """
+    cards = "".join(
+        f'<div class="{"c-kpi-card accent" if is_accent else "c-kpi-card"}">'
+        f'<div class="c-kpi-lbl">{lbl}</div>'
+        f'<div class="c-kpi-val">{val}</div>'
+        f'</div>'
+        for lbl, val, is_accent in items
+    )
     return f'<div class="c-kpi-grid" style="grid-template-columns: repeat({cols}, 1fr);">{cards}</div>'
-
 def render_analitik_raporlar():
     st.markdown('<div class="analytics-section-title">🔬 Gelişmiş Ölçme &amp; Değerlendirme Analitiği</div>', unsafe_allow_html=True)
     rapor_kapsami = st.radio("Analiz Türü:", [
