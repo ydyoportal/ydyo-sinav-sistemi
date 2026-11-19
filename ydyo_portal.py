@@ -7,6 +7,7 @@ import io
 import zipfile
 import os
 import re
+import base64
 import hashlib
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -22,6 +23,15 @@ from reportlab.lib import colors
 
 st.set_page_config(page_title="KTO Karatay YDY Portalı", page_icon="🎓", layout="wide")
 
+def get_logo_b64():
+    if os.path.exists("logo.png"):
+        try:
+            with open("logo.png", "rb") as f:
+                return base64.b64encode(f.read()).decode()
+        except Exception:
+            return ""
+    return ""
+
 # ==========================================
 # KURUMSAL ARAYÜZ (UI) & TEMA AYARLARI
 # ==========================================
@@ -32,15 +42,163 @@ def kurumsal_tema_uygula():
 
     html, body, [class*="css"] { font-family: 'DM Sans', sans-serif !important; }
     h1, h2, h3, h4, h5, h6 { font-family: 'Jost', sans-serif !important; color: #1A365D !important; }
-    .stApp { background-color: #F8F9FA; }
+    .stApp { background-color: #F4F6F9; }
     [data-testid="stSidebar"] { background-color: #1A365D; }
     [data-testid="stSidebar"] * { color: #FFFFFF !important; }
-    button[kind="primary"] { background-color: #E84C0F !important; border-color: #E84C0F !important; color: white !important; font-weight: 600 !important; border-radius: 6px !important; transition: all 0.3s ease; }
-    button[kind="primary"]:hover { background-color: #CC400A !important; border-color: #CC400A !important; transform: translateY(-2px); }
-    button[kind="secondary"] { border-color: #1A365D !important; color: #1A365D !important; border-radius: 6px !important; }
-    button[kind="secondary"]:hover { border-color: #E84C0F !important; color: #E84C0F !important; }
+
+    /* Birincil ve İkincil Butonlar */
+    button[kind="primary"] {
+        background-color: #E84C0F !important;
+        border-color: #E84C0F !important;
+        color: white !important;
+        font-weight: 600 !important;
+        border-radius: 8px !important;
+        transition: all 0.2s ease;
+    }
+    button[kind="primary"]:hover {
+        background-color: #CC400A !important;
+        border-color: #CC400A !important;
+        transform: translateY(-1px);
+    }
+    button[kind="secondary"] {
+        border-color: #1A365D !important;
+        color: #1A365D !important;
+        border-radius: 8px !important;
+    }
+    button[kind="secondary"]:hover {
+        border-color: #E84C0F !important;
+        color: #E84C0F !important;
+    }
+
+    /* Metrik ve Tablo (Tam ekran araç çubuğunu engellememesi için overflow: visible) */
     [data-testid="stMetricValue"] { color: #E84C0F !important; font-family: 'Jost', sans-serif !important; font-weight: 600; }
-    [data-testid="stDataFrame"] { border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+    [data-testid="stDataFrame"] {
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(26, 54, 93, 0.06);
+    }
+
+    /* Seçenek B: Modern Kart Giriş Ekranı */
+    .login-card-header {
+        background: linear-gradient(135deg, #1A365D 0%, #24477A 100%);
+        padding: 28px 24px 22px 24px;
+        border-radius: 14px 14px 0 0;
+        text-align: center;
+        border-bottom: 4px solid #E84C0F;
+        margin-bottom: -1px;
+    }
+    .login-card-header img {
+        max-height: 54px;
+        margin-bottom: 12px;
+    }
+    .login-card-title {
+        font-family: 'DM Sans', sans-serif;
+        font-size: 20px;
+        font-weight: 700;
+        color: #FFFFFF;
+        margin: 0;
+        letter-spacing: 0.4px;
+    }
+    .login-card-sub {
+        font-family: 'Jost', sans-serif;
+        font-size: 13px;
+        color: #CBD5E1;
+        margin-top: 4px;
+    }
+
+    /* Seçenek C: Kompakt Profesyonel Hoca Paneli */
+    .c-header-bar {
+        background: linear-gradient(135deg, #1A365D 0%, #234575 100%);
+        padding: 16px 22px;
+        border-radius: 10px;
+        border-bottom: 3px solid #E84C0F;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+        box-shadow: 0 4px 12px rgba(26, 54, 93, 0.12);
+    }
+    .c-header-title {
+        font-family: 'DM Sans', sans-serif;
+        font-size: 18px;
+        font-weight: 700;
+        color: #FFFFFF;
+        margin: 0;
+    }
+    .c-header-sub {
+        font-family: 'Jost', sans-serif;
+        font-size: 12.5px;
+        color: #CBD5E1;
+        margin-top: 2px;
+    }
+    .c-badge-open {
+        background-color: rgba(22, 163, 74, 0.2);
+        color: #86EFAC;
+        border: 1px solid #22C55E;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .c-badge-locked {
+        background-color: rgba(220, 38, 38, 0.25);
+        color: #FCA5A5;
+        border: 1px solid #EF4444;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .c-kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-bottom: 14px;
+    }
+    .c-kpi-card {
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-top: 3px solid #1A365D;
+        border-radius: 8px;
+        padding: 12px 16px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    }
+    .c-kpi-card.accent {
+        border-top-color: #E84C0F;
+    }
+    .c-kpi-lbl {
+        font-size: 11px;
+        font-weight: 700;
+        color: #64748B;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .c-kpi-val {
+        font-family: 'Jost', sans-serif;
+        font-size: 24px;
+        font-weight: 600;
+        color: #1A365D;
+        margin-top: 2px;
+    }
+    .c-kpi-card.accent .c-kpi-val {
+        color: #E84C0F;
+    }
+    .sidebar-profile {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 10px;
+        padding: 12px 14px;
+        margin-bottom: 14px;
+    }
+    .sidebar-role-badge {
+        display: inline-block;
+        background: #E84C0F;
+        color: #FFFFFF;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 2px 9px;
+        border-radius: 12px;
+        margin-top: 5px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -145,7 +303,6 @@ def create_corporate_class_excel(sec_sinav, sec_sube, df_s, df_aktif, cols_to_sh
     num_cols = max(len(headers), 5)
     last_col_letter = get_column_letter(num_cols)
 
-    # Stiller
     fill_navy = PatternFill(start_color="1A365D", end_color="1A365D", fill_type="solid")
     fill_zebra = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
     fill_kpi_lbl = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
@@ -178,7 +335,6 @@ def create_corporate_class_excel(sec_sinav, sec_sube, df_s, df_aktif, cols_to_sh
     border_kpi_top_navy = Border(top=med_navy, left=thin_gray, right=thin_gray)
     border_kpi_bottom = Border(bottom=thin_gray, left=thin_gray, right=thin_gray)
 
-    # 1. ÜST KURUMSAL BANT + LOGO
     ws.row_dimensions[1].height = 28
     ws.row_dimensions[2].height = 20
     for r in [1, 2]:
@@ -215,7 +371,6 @@ def create_corporate_class_excel(sec_sinav, sec_sube, df_s, df_aktif, cols_to_sh
     c_sub.font = font_sub
     c_sub.alignment = Alignment(horizontal="left", vertical="center", indent=1)
 
-    # 2. KPI ŞERİDİ (Satır 4-5)
     ws.row_dimensions[3].height = 10
     ws.row_dimensions[4].height = 18
     ws.row_dimensions[5].height = 24
@@ -240,7 +395,6 @@ def create_corporate_class_excel(sec_sinav, sec_sube, df_s, df_aktif, cols_to_sh
         c_val.alignment = Alignment(horizontal="center", vertical="center")
         c_val.border = border_kpi_bottom
 
-    # 3. ÖĞRENCİ NOTLARI TABLOSU
     ws.row_dimensions[6].height = 12
     ws.row_dimensions[7].height = 20
     ws.merge_cells(f"A7:{last_col_letter}7")
@@ -283,7 +437,6 @@ def create_corporate_class_excel(sec_sinav, sec_sube, df_s, df_aktif, cols_to_sh
                 cell.alignment = Alignment(horizontal="center", vertical="center")
         curr_row += 1
 
-    # 4. BECERİ VE KAZANIM ANALİZİ (ALT BLOK)
     if beceri_listesi:
         curr_row += 1
         ws.row_dimensions[curr_row].height = 20
@@ -297,7 +450,6 @@ def create_corporate_class_excel(sec_sinav, sec_sube, df_s, df_aktif, cols_to_sh
         ws.row_dimensions[curr_row].height = 24
         use_wide_merge = (num_cols >= 7)
         if use_wide_merge:
-            # A: Bölüm, B-D: Kazanım (birleşik), E: Sınıf Ort., F: Max Puan, G: Başarı (%)
             ws.cell(row=curr_row, column=1, value="Bölüm")
             ws.merge_cells(start_row=curr_row, start_column=2, end_row=curr_row, end_column=4)
             ws.cell(row=curr_row, column=2, value="Ölçülen Kazanım")
@@ -361,7 +513,6 @@ def create_corporate_class_excel(sec_sinav, sec_sube, df_s, df_aktif, cols_to_sh
                     cc.alignment = Alignment(horizontal="left" if c_i in [1, 2] else "center", vertical="center", wrap_text=True)
             curr_row += 1
 
-    # 5. ALT BİLGİ (FOOTER)
     curr_row += 1
     ws.merge_cells(f"A{curr_row}:{last_col_letter}{curr_row}")
     c_ft = ws[f"A{curr_row}"]
@@ -369,7 +520,6 @@ def create_corporate_class_excel(sec_sinav, sec_sube, df_s, df_aktif, cols_to_sh
     c_ft.font = font_footer
     c_ft.alignment = Alignment(horizontal="left", vertical="center")
 
-    # 6. SÜTUN GENİŞLİKLERİ VE YATAY TEK SAYFA BASKI AYARI
     col_widths = {1: 18, 2: 26, 3: 11, 4: 13, 5: 13}
     for c_i in range(1, num_cols + 1):
         ws.column_dimensions[get_column_letter(c_i)].width = col_widths.get(c_i, 14)
@@ -538,7 +688,6 @@ def create_modern_pdf(rapor_verileri):
         sinif_genel_ort = safe_float(veri.get('sinif_genel_ort', 0))
         satirlar = veri.get('satirlar', [])
 
-        # 1. ÜST LACİVERT KURUMSAL BANT (SEÇENEK C)
         sol_metin = [
             Paragraph("KTO KARATAY UNIVERSITY", st_banner_uni),
             Paragraph("Department of Foreign Languages | English Preparatory Program", st_banner_dept)
@@ -577,7 +726,6 @@ def create_modern_pdf(rapor_verileri):
         elements.append(banner_table)
         elements.append(Spacer(1, 10))
 
-        # 2. ÖĞRENCİ KİMLİK ŞERİDİ
         stu_table = Table(
             [[Paragraph(f"<font name='{FONT_HEADING}' color='#1A365D'>STUDENT:</font>  {ogr_ad}", st_stu_left),
               Paragraph(f"<font name='{FONT_HEADING}' color='#1A365D'>STUDENT ID:</font>  {ogr_no}", st_stu_right)]],
@@ -595,7 +743,6 @@ def create_modern_pdf(rapor_verileri):
         elements.append(stu_table)
         elements.append(Spacer(1, 8))
 
-        # 3. 4'LÜ KOMPAKT KPI KARTLARI
         def kpi_box(label, value_text, val_style, accent_hex):
             t = Table([[Paragraph(label, st_kpi_lbl)], [Paragraph(value_text, val_style)]], colWidths=[128])
             t.setStyle(TableStyle([
@@ -627,7 +774,6 @@ def create_modern_pdf(rapor_verileri):
         elements.append(kpi_strip)
         elements.append(Spacer(1, 12))
 
-        # 4. BÜTÜNLEŞİK PERFORMANS VE KAZANIM TABLOSU
         compact = len(satirlar) > 13
         body_fs = 7.5 if compact else 8.2
         pad_v = 3.5 if compact else 5.0
@@ -685,7 +831,7 @@ def create_modern_pdf(rapor_verileri):
     return buffer
 
 # ==========================================
-# GİRİŞ KAPISI VE OTURUM
+# GİRİŞ KAPISI VE OTURUM (SEÇENEK B)
 # ==========================================
 if 'giris_basarili' not in st.session_state:
     st.session_state.update({'giris_basarili': False, 'kullanici_adi': "", 'rol': "", 'isim': ""})
@@ -705,18 +851,44 @@ def cikis_yap():
     st.session_state.update({'giris_basarili': False, 'kullanici_adi': "", 'rol': "", 'isim': ""})
     st.rerun()
 
+logo_b64 = get_logo_b64()
+
 if not st.session_state['giris_basarili']:
-    st.markdown("<h1 style='text-align: center;'>KTO Karatay YDY - Merkezi Giriş</h1>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 2, 1])
+    st.markdown("<div style='height: 30px;'></div>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1.2, 1.6, 1.2])
     with col2:
+        logo_html = f"<img src='data:image/png;base64,{logo_b64}' alt='KTO Logo'/>" if logo_b64 else ""
+        st.markdown(f"""
+        <div class="login-card-header">
+            {logo_html}
+            <div class="login-card-title">KTO KARATAY UNIVERSITY</div>
+            <div class="login-card-sub">Department of Foreign Languages | Exam &amp; Analytics Portal</div>
+        </div>
+        """, unsafe_allow_html=True)
         with st.form("giris_formu"):
-            k_adi = st.text_input("Kullanıcı Adı")
-            sifre = st.text_input("Şifre", type="password")
-            if st.form_submit_button("Sisteme Giriş Yap", type="primary", use_container_width=True): giris_yap(k_adi, sifre)
+            k_adi = st.text_input("Kullanıcı Adı", placeholder="Kullanıcı adınızı girin")
+            sifre = st.text_input("Şifre", type="password", placeholder="••••••••")
+            st.markdown("<div style='height: 6px;'></div>", unsafe_allow_html=True)
+            if st.form_submit_button("Sisteme Giriş Yap", type="primary", use_container_width=True):
+                giris_yap(k_adi, sifre)
+        st.markdown("<p style='text-align:center; color:#64748B; font-size:12px; margin-top:14px;'>SoFL | Testing and Evaluation Office</p>", unsafe_allow_html=True)
 else:
-    st.sidebar.title(f"👤 {st.session_state['isim']}")
-    st.sidebar.info(f"Yetki: {st.session_state['rol']}")
-    if st.sidebar.button("🚪 Güvenli Çıkış"): cikis_yap()
+    if logo_b64:
+        st.sidebar.markdown(
+            f"<div style='text-align:center; padding: 6px 0 14px 0; border-bottom: 1px solid rgba(255,255,255,0.12); margin-bottom:14px;'>"
+            f"<img src='data:image/png;base64,{logo_b64}' style='max-height:46px;'/></div>",
+            unsafe_allow_html=True
+        )
+    st.sidebar.markdown(
+        f"""
+        <div class="sidebar-profile">
+            <div style="font-size:15px; font-weight:700;">{st.session_state['isim']}</div>
+            <span class="sidebar-role-badge">{st.session_state['rol']}</span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    if st.sidebar.button("🚪 Güvenli Çıkış", use_container_width=True): cikis_yap()
     
     with st.sidebar.expander("🔑 Şifremi Değiştir"):
         eski_sifre = st.text_input("Mevcut Şifre", type="password", key="eski_s")
@@ -733,10 +905,9 @@ else:
                     st.success("Şifreniz güncellendi!")
                 else: st.error("Mevcut şifreniz yanlış!")
                 cur.close(); conn.close()
-        
-    st.title("🎓 KTO Karatay YDY Öğrenme Analitiği Sistemi")
 
     if st.session_state['rol'] in ["Admin", "Testing"]:
+        st.title("🎓 KTO Karatay YDY Öğrenme Analitiği Sistemi")
         if st.session_state['rol'] == "Admin":
             tabs = st.tabs(["📝 Sınav Tanımla", "🔒 Sınav & Veri Yönetimi", "📋 Öğrenci & Atamalar", "👥 Kullanıcılar", "📊 Analitik Raporlar"])
             tab_sinav, tab_yonetim, tab_atamalar, tab_kullanici, tab_rapor = tabs[0], tabs[1], tabs[2], tabs[3], tabs[4]
@@ -1370,10 +1541,9 @@ else:
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ (AUTO-HEAL ZIRHI İLE)
+    # 5. HOCA VERİ GİRİŞ PANELİ (SEÇENEK C + PINNED SÜTUN)
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
-        st.subheader("📝 Hızlı Veri Giriş Terminali")
         conn = get_db_connection()
         cur = conn.cursor()
         
@@ -1390,25 +1560,38 @@ else:
             st.stop()
             
         sinav_kilit_durumlari = {row[0]: row[1] for row in sinav_data}
-        secilen_islem_sinavi = st.selectbox("Sorumlu Olduğunuz Sınavlar", acik_sinavlar)
-        is_locked = sinav_kilit_durumlari.get(secilen_islem_sinavi, False)
         
-        if is_locked:
-            st.error("🔒 BU SINAV TESTING OFİSİ TARAFINDAN KİLİTLENMİŞTİR!")
-            st.warning("Not girişi kapatılmıştır. Yalnızca görüntüleme yapabilirsiniz.")
-            
-        cur.execute("SELECT tolerans, kitapcik_turu FROM sinav_ayarlari WHERE sinav_kodu=%s", (secilen_islem_sinavi,))
-        ayarlar_res = cur.fetchone()
-        tolerans = int(ayarlar_res[0]) if (ayarlar_res and ayarlar_res[0] is not None) else 6
-        kitapcik_turu = ayarlar_res[1] if (ayarlar_res and ayarlar_res[1] is not None) else "Çoklu Kitapçık (A ve B)"
-        is_multi_booklet = "Çoklu" in kitapcik_turu
+        col_sel1, col_sel2 = st.columns([2, 1])
+        with col_sel1:
+            secilen_islem_sinavi = st.selectbox("Sorumlu Olduğunuz Sınav", acik_sinavlar)
+        is_locked = sinav_kilit_durumlari.get(secilen_islem_sinavi, False)
         
         ilgili_modul = secilen_islem_sinavi.split("_")[0]
         cur.execute("SELECT sube FROM hoca_atamalari WHERE modul=%s AND kullanici_adi=%s", (ilgili_modul, st.session_state['kullanici_adi']))
         hoca_subeleri = [row[0] for row in cur.fetchall()]
         if not hoca_subeleri: st.error("Bu sınavın modülünde size atanmış bir şube bulunmuyor."); st.stop()
         
-        secilen_sube = st.selectbox("Sorumlu Olduğunuz Şubeler", hoca_subeleri)
+        with col_sel2:
+            secilen_sube = st.selectbox("Şube", hoca_subeleri)
+
+        # Seçenek C: Kompakt Profesyonel Üst Bant
+        sinav_temiz_baslik = secilen_islem_sinavi.replace("_", " ")
+        durum_badge = '<span class="c-badge-locked">🔒 KİLİTLİ (Salt Okunur)</span>' if is_locked else '<span class="c-badge-open">● Not Girişine Açık</span>'
+        st.markdown(f"""
+        <div class="c-header-bar">
+            <div>
+                <div class="c-header-title">{sinav_temiz_baslik}  —  {secilen_sube} Şubesi</div>
+                <div class="c-header-sub">Department of Foreign Languages | Hızlı Veri Giriş Terminali</div>
+            </div>
+            <div>{durum_badge}</div>
+        </div>
+        """, unsafe_allow_html=True)
+            
+        cur.execute("SELECT tolerans, kitapcik_turu FROM sinav_ayarlari WHERE sinav_kodu=%s", (secilen_islem_sinavi,))
+        ayarlar_res = cur.fetchone()
+        tolerans = int(ayarlar_res[0]) if (ayarlar_res and ayarlar_res[0] is not None) else 6
+        kitapcik_turu = ayarlar_res[1] if (ayarlar_res and ayarlar_res[1] is not None) else "Çoklu Kitapçık (A ve B)"
+        is_multi_booklet = "Çoklu" in kitapcik_turu
         
         try:
             rubrik_df = pd.read_sql_query("SELECT ana_bolum, alt_bolum, max_puan, b_grubu_karsiligi FROM sinav_tos WHERE sinav_kodu=%s", conn, params=(secilen_islem_sinavi,))
@@ -1448,7 +1631,6 @@ else:
                 eslesen_isimler.append(isim)
             ort_mesaj = "🤖 **Sistem Zekası Aktif:** Şu okumalar otomatik olarak eşleştirildi ve ortalamaları alınacaktır: " + " | ".join(eslesen_isimler)
 
-        # GÜNCELLEME: Çakışmayı ve B Kitapçığı çökmesini engelleyen Güvenli Haritalama
         safe_b_map = {}
         reverse_b_map = {}
         for _, row in rubrik_df.iterrows():
@@ -1466,42 +1648,29 @@ else:
                 safe_b_map[a_name] = a_name
                 reverse_b_map[a_name] = a_name
 
-        st.markdown(f"### 📊 {secilen_sube} - Veri Giriş Paneli")
         cur.execute("SELECT veri_json FROM notlar WHERE sinav_kodu=%s AND sube=%s", (secilen_islem_sinavi, secilen_sube))
         kaydedilmis_veri = cur.fetchone()
         
-        # GÜNCELLEME: Efsanevi AUTO-HEAL (Otomatik Kurtarma) Bloğu
-        # Veritabanındaki eski notları kaybetmeden yeni sütunlara taşır ve nan sütunları imha eder
         current_tos_cols = list(dict.fromkeys([f"{row['ana_bolum']} - {row['alt_bolum']}" for _, row in rubrik_df.iterrows()]))
         base_cols = ["Ogrenci_No", "Ad_Soyad", "Sınava Girdi", "Kitapçık", "Sınav Notu"]
         
         if kaydedilmis_veri: 
             df_giris = pd.read_json(io.StringIO(kaydedilmis_veri[0]))
-            
-            # Tüm sütun adlarını temiz string'e çevir ve kopyaları sil
             df_giris.columns = [str(c).strip() for c in df_giris.columns]
             df_giris = df_giris.loc[:, ~df_giris.columns.duplicated()]
             
             if "Sınava Girdi" not in df_giris.columns: df_giris.insert(2, "Sınava Girdi", True)
             if "Kitapçık" not in df_giris.columns: df_giris.insert(3, "Kitapçık", "A")
             
-            # Veri Kurtarma (Migration)
             old_cols = [c for c in df_giris.columns if c not in current_tos_cols and c not in base_cols]
-            
             if old_cols:
-                # Yeni sütunları önceden boş olarak aç
                 for nc in current_tos_cols:
                     if nc not in df_giris.columns: df_giris[nc] = ""
-                
-                # Speaking notlarını sessizce eski sütundan yenisine taşı
                 old_speak = sorted([c for c in old_cols if 'speaking' in c.lower() and c.lower() != 'nan'])
                 new_speak = sorted([c for c in current_tos_cols if 'speaking' in c.lower()])
-                
                 if len(old_speak) == len(new_speak) and len(old_speak) > 0:
                     for oc, nc in zip(old_speak, new_speak):
                         df_giris[nc] = df_giris[oc].fillna('')
-                
-                # Çökmeye sebep olan eski ve hayalet 'nan' sütunlarını kalıcı sil
                 df_giris.drop(columns=old_cols, inplace=True, errors='ignore')
         else:
             gercek_ogrenciler = pd.read_sql_query("SELECT ogrenci_no AS \"Ogrenci_No\", ad_soyad AS \"Ad_Soyad\" FROM ogrenciler WHERE modul=%s AND sube=%s", conn, params=(ilgili_modul, secilen_sube))
@@ -1521,15 +1690,28 @@ else:
         total_ogr = len(df_giris)
         if total_ogr > 0:
             df_giris["Sınav Notu"] = pd.to_numeric(df_giris["Sınav Notu"], errors='coerce').fillna(0.0)
-            graded_ogr = (df_giris['Sınav Notu'] > 0).sum()
+            graded_ogr = int((df_giris['Sınav Notu'] > 0).sum())
             tamamlanma_yuzdesi = min(int((graded_ogr / total_ogr) * 100), 100)
-            st.progress(tamamlanma_yuzdesi, text=f"Sınıf Notlandırma İlerlemesi: %{tamamlanma_yuzdesi} ({graded_ogr} / {total_ogr} Öğrenci)")
+            sube_ort_str = f"{df_giris[df_giris['Sınav Notu'] > 0]['Sınav Notu'].mean():.1f}" if graded_ogr > 0 else "0.0"
+            max_not_str = f"{df_giris['Sınav Notu'].max():.1f}" if graded_ogr > 0 else "0.0"
             
-            mc1, mc2, mc3 = st.columns(3)
-            mc1.metric("Şube Ortalaması", f"{df_giris[df_giris['Sınav Notu'] > 0]['Sınav Notu'].mean():.1f}" if graded_ogr > 0 else "0")
-            mc2.metric("En Yüksek Not", f"{df_giris['Sınav Notu'].max():.1f}" if graded_ogr > 0 else "0")
-            mc3.metric("Kayıtlı Öğrenci", f"{total_ogr}")
-            st.markdown("---")
+            st.markdown(f"""
+            <div class="c-kpi-grid">
+                <div class="c-kpi-card accent">
+                    <div class="c-kpi-lbl">Şube Ortalaması</div>
+                    <div class="c-kpi-val">{sube_ort_str}</div>
+                </div>
+                <div class="c-kpi-card">
+                    <div class="c-kpi-lbl">En Yüksek Not</div>
+                    <div class="c-kpi-val">{max_not_str}</div>
+                </div>
+                <div class="c-kpi-card">
+                    <div class="c-kpi-lbl">Notlandırılan / Kayıtlı</div>
+                    <div class="c-kpi-val">{graded_ogr} / {total_ogr}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.progress(tamamlanma_yuzdesi, text=f"Sınıf Notlandırma İlerlemesi: %{tamamlanma_yuzdesi}")
 
         if is_multi_booklet:
             tab_yoklama, tab_notlar = st.tabs(["📍 1. Aşama: Yoklama ve Kitapçık Seçimi", "✍️ 2. Aşama: Not Girişi (A/B Görünümlü)"])
@@ -1539,7 +1721,7 @@ else:
                 with st.form("form_yoklama"):
                     col_conf_yok = {
                         "Ogrenci_No": st.column_config.TextColumn("Öğrenci No", disabled=True),
-                        "Ad_Soyad": st.column_config.TextColumn("Ad Soyad", disabled=True),
+                        "Ad_Soyad": st.column_config.TextColumn("Ad Soyad", disabled=True, pinned=True),
                         "Sınava Girdi": st.column_config.CheckboxColumn("Sınava Girdi"),
                         "Kitapçık": st.column_config.SelectboxColumn("Kitapçık", options=["A", "B", "C", "D"])
                     }
@@ -1565,11 +1747,8 @@ else:
                     
                 elif "B Kitapçığı" in gorunum:
                     df_view = df_view[df_view["Kitapçık"] == "B"].copy()
-                    
-                    # Güvenli yeniden adlandırma (Crash engeller)
                     active_safe_map = {k: v for k, v in safe_b_map.items() if k in df_view.columns}
                     df_view = df_view.rename(columns=active_safe_map)
-                    
                     skill_cols = [c for c in df_view.columns if c not in base_cols]
                     df_view = df_view[base_cols + skill_cols]
                 
@@ -1580,7 +1759,7 @@ else:
                     
                     col_conf_not = {
                         "Ogrenci_No": st.column_config.TextColumn("Öğrenci No", disabled=True),
-                        "Ad_Soyad": st.column_config.TextColumn("Ad Soyad", disabled=True),
+                        "Ad_Soyad": st.column_config.TextColumn("Ad Soyad", disabled=True, pinned=True),
                         "Sınava Girdi": st.column_config.CheckboxColumn("Sınava Girdi", disabled=True),
                         "Kitapçık": st.column_config.TextColumn("Kitapçık", disabled=True),
                         "Sınav Notu": st.column_config.NumberColumn("Sınav Notu", disabled=True)
@@ -1672,7 +1851,7 @@ else:
             
             col_conf_not = {
                 "Ogrenci_No": st.column_config.TextColumn("Öğrenci No", disabled=True),
-                "Ad_Soyad": st.column_config.TextColumn("Ad Soyad", disabled=True),
+                "Ad_Soyad": st.column_config.TextColumn("Ad Soyad", disabled=True, pinned=True),
                 "Sınava Girdi": st.column_config.CheckboxColumn("Sınava Girdi"),
                 "Sınav Notu": st.column_config.NumberColumn("Sınav Notu", disabled=True)
             }
