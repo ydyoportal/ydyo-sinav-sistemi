@@ -32,6 +32,20 @@ def get_logo_b64():
             return ""
     return ""
 
+def filtrele_sube_sinavlari(tum_sinavlar, modul, sube):
+    modul_sinavlari = [s for s in tum_sinavlar if s.split("_")[0] == modul]
+    sube_up = str(sube).upper().strip()
+    tespit_kur = None
+    for kur in ["A1", "A2", "B1", "B2", "PF"]:
+        if sube_up.startswith(kur):
+            tespit_kur = kur
+            break
+    if tespit_kur:
+        kur_sinavlari = [s for s in modul_sinavlari if len(s.split("_")) > 1 and s.split("_")[1].upper() == tespit_kur]
+        if kur_sinavlari:
+            return kur_sinavlari
+    return modul_sinavlari
+
 # ==========================================
 # KURUMSAL ARAYÜZ (UI) & TEMA AYARLARI
 # ==========================================
@@ -45,6 +59,24 @@ def kurumsal_tema_uygula():
     .stApp { background-color: #F4F6F9; }
     [data-testid="stSidebar"] { background-color: #1A365D; }
     [data-testid="stSidebar"] * { color: #FFFFFF !important; }
+
+    /* Sol Menü Buton & Input Düzeltmesi */
+    [data-testid="stSidebar"] button {
+        background-color: rgba(255, 255, 255, 0.12) !important;
+        border: 1px solid rgba(255, 255, 255, 0.28) !important;
+        color: #FFFFFF !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        transition: all 0.2s ease;
+    }
+    [data-testid="stSidebar"] button:hover {
+        background-color: #E84C0F !important;
+        border-color: #E84C0F !important;
+        color: #FFFFFF !important;
+    }
+    [data-testid="stSidebar"] input {
+        color: #1E293B !important;
+    }
 
     /* Birincil ve İkincil Butonlar */
     button[kind="primary"] {
@@ -70,7 +102,7 @@ def kurumsal_tema_uygula():
         color: #E84C0F !important;
     }
 
-    /* Metrik ve Tablo (Tam ekran araç çubuğunu engellememesi için overflow: visible) */
+    /* Metrik ve Tablo */
     [data-testid="stMetricValue"] { color: #E84C0F !important; font-family: 'Jost', sans-serif !important; font-weight: 600; }
     [data-testid="stDataFrame"] {
         border-radius: 8px;
@@ -105,7 +137,7 @@ def kurumsal_tema_uygula():
         margin-top: 4px;
     }
 
-    /* Seçenek C: Kompakt Profesyonel Hoca Paneli */
+    /* Kompakt Profesyonel Üst Bant (Admin Opsiyon A & Hoca Paneli C) */
     .c-header-bar {
         background: linear-gradient(135deg, #1A365D 0%, #234575 100%);
         padding: 16px 22px;
@@ -143,6 +175,15 @@ def kurumsal_tema_uygula():
         background-color: rgba(220, 38, 38, 0.25);
         color: #FCA5A5;
         border: 1px solid #EF4444;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .c-badge-role {
+        background-color: rgba(232, 76, 15, 0.22);
+        color: #FDBA74;
+        border: 1px solid #E84C0F;
         padding: 5px 12px;
         border-radius: 20px;
         font-size: 12px;
@@ -907,7 +948,17 @@ else:
                 cur.close(); conn.close()
 
     if st.session_state['rol'] in ["Admin", "Testing"]:
-        st.title("🎓 KTO Karatay YDY Öğrenme Analitiği Sistemi")
+        # Opsiyon A: Kurumsal Üst Bant
+        st.markdown(f"""
+        <div class="c-header-bar">
+            <div>
+                <div class="c-header-title">KTO Karatay YDY Öğrenme Analitiği Sistemi</div>
+                <div class="c-header-sub">Department of Foreign Languages | Testing and Evaluation Office</div>
+            </div>
+            <div><span class="c-badge-role">{st.session_state['rol']} Paneli</span></div>
+        </div>
+        """, unsafe_allow_html=True)
+
         if st.session_state['rol'] == "Admin":
             tabs = st.tabs(["📝 Sınav Tanımla", "🔒 Sınav & Veri Yönetimi", "📋 Öğrenci & Atamalar", "👥 Kullanıcılar", "📊 Analitik Raporlar"])
             tab_sinav, tab_yonetim, tab_atamalar, tab_kullanici, tab_rapor = tabs[0], tabs[1], tabs[2], tabs[3], tabs[4]
@@ -1185,7 +1236,7 @@ else:
                 conn.close()
                 
         # ----------------------------------------------------
-        # 4. GELİŞMİŞ ANALİTİK VE KARNE RAPORLARI
+        # 4. GELİŞMİŞ ANALİTİK VE KARNE RAPORLARI (ŞUBE -> SINAV)
         # ----------------------------------------------------
         with tab_rapor:
             st.markdown("### 🔬 Gelişmiş Ölçme & Değerlendirme Analitiği")
@@ -1313,85 +1364,116 @@ else:
                                     st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
             elif rapor_kapsami == "🎯 Madde Ayırt Edicilik (Item Discrimination)":
-                cur.execute("SELECT sinav_kodu FROM sinavlar")
-                sinavlar = [r[0] for r in cur.fetchall()]
-                if not sinavlar: st.warning("Sınav bulunamadı.")
+                cur.execute("SELECT DISTINCT sube FROM notlar ORDER BY sube")
+                mevcut_subeler = [r[0] for r in cur.fetchall()]
+                if not mevcut_subeler: st.warning("Not girişi yapılmış şube bulunamadı.")
                 else:
-                    secilen_sinav = st.selectbox("Analiz Edilecek Sınav", sinavlar)
-                    if st.button("Analizi Başlat", type="primary"):
-                        df_tos = pd.read_sql_query("SELECT ana_bolum, alt_bolum, max_puan FROM sinav_tos WHERE sinav_kodu=%s", conn, params=(secilen_sinav,))
-                        max_puanlar = {f"{r['ana_bolum']} - {r['alt_bolum']}": float(r['max_puan']) for _, r in df_tos.iterrows()}
-                        cur.execute("SELECT veri_json FROM notlar WHERE sinav_kodu=%s", (secilen_sinav,))
-                        tum_ogrenciler = []
-                        for j in cur.fetchall(): tum_ogrenciler.extend(pd.read_json(io.StringIO(j[0])).to_dict('records'))
-                        df_hepsi = pd.DataFrame(tum_ogrenciler)
-                        if "Sınava Girdi" in df_hepsi.columns: df_hepsi = df_hepsi[df_hepsi["Sınava Girdi"] == True]
-                        if "Sınav Notu" not in df_hepsi.columns or len(df_hepsi) < 10: st.warning("Aktif katılımcı verisi yetersiz (En az 10 öğrenci).")
-                        else:
-                            df_hepsi = df_hepsi.sort_values(by="Sınav Notu", ascending=False)
-                            n_27 = max(1, int(len(df_hepsi) * 0.27))
-                            df_ust, df_alt = df_hepsi.head(n_27), df_hepsi.tail(n_27)
-                            sonuclar = []
-                            for bolum, max_p in max_puanlar.items():
-                                if bolum in df_hepsi.columns:
-                                    ust_ortalama = df_ust[bolum].mean()
-                                    alt_ortalama = df_alt[bolum].mean()
-                                    d_index = (ust_ortalama / max_p if max_p > 0 else 0) - (alt_ortalama / max_p if max_p > 0 else 0)
-                                    durum = "Çok İyi Madde" if d_index >= 0.40 else "İyi Madde" if d_index >= 0.30 else "Zayıf Madde" if d_index >= 0.20 else "Çöpe Atılmalı"
-                                    sonuclar.append({"Bölüm": bolum, "Max": max_p, "Üst %27": round(ust_ortalama, 2), "Alt %27": round(alt_ortalama, 2), "D İndeksi": round(d_index, 3), "Yorum": durum})
-                            df_s = pd.DataFrame(sonuclar)
-                            if not df_s.empty:
-                                def renk_ver(val):
-                                    if not isinstance(val, str): return ''
-                                    if "Çok İyi" in val: return 'color: green; font-weight: bold;'
-                                    if "Çöpe" in val: return 'background-color: #FADBD8; color: black;'
-                                    return ''
-                                try: styler = df_s.style.map(renk_ver, subset=['Yorum'])
-                                except AttributeError: styler = df_s.style.applymap(renk_ver, subset=['Yorum'])
-                                st.dataframe(styler, use_container_width=True)
+                    c_f1, c_f2 = st.columns(2)
+                    with c_f1:
+                        sec_sube_md = st.selectbox("Şube Seçin", ["Tüm Şubeler"] + mevcut_subeler, key="md_sube")
+                    if sec_sube_md == "Tüm Şubeler":
+                        cur.execute("SELECT DISTINCT sinav_kodu FROM notlar ORDER BY sinav_kodu")
+                    else:
+                        cur.execute("SELECT DISTINCT sinav_kodu FROM notlar WHERE sube=%s ORDER BY sinav_kodu", (sec_sube_md,))
+                    sinavlar = [r[0] for r in cur.fetchall()]
+                    if not sinavlar: st.warning("Bu şube için kayıtlı sınav notu bulunamadı.")
+                    else:
+                        with c_f2:
+                            secilen_sinav = st.selectbox("Analiz Edilecek Sınav", sinavlar, key="md_sinav")
+                        if st.button("Analizi Başlat", type="primary"):
+                            df_tos = pd.read_sql_query("SELECT ana_bolum, alt_bolum, max_puan FROM sinav_tos WHERE sinav_kodu=%s", conn, params=(secilen_sinav,))
+                            max_puanlar = {f"{r['ana_bolum']} - {r['alt_bolum']}": float(r['max_puan']) for _, r in df_tos.iterrows()}
+                            if sec_sube_md == "Tüm Şubeler":
+                                cur.execute("SELECT veri_json FROM notlar WHERE sinav_kodu=%s", (secilen_sinav,))
+                            else:
+                                cur.execute("SELECT veri_json FROM notlar WHERE sinav_kodu=%s AND sube=%s", (secilen_sinav, sec_sube_md))
+                            tum_ogrenciler = []
+                            for j in cur.fetchall(): tum_ogrenciler.extend(pd.read_json(io.StringIO(j[0])).to_dict('records'))
+                            df_hepsi = pd.DataFrame(tum_ogrenciler)
+                            if "Sınava Girdi" in df_hepsi.columns: df_hepsi = df_hepsi[df_hepsi["Sınava Girdi"] == True]
+                            if "Sınav Notu" not in df_hepsi.columns or len(df_hepsi) < 10: st.warning("Aktif katılımcı verisi yetersiz (En az 10 öğrenci).")
+                            else:
+                                df_hepsi = df_hepsi.sort_values(by="Sınav Notu", ascending=False)
+                                n_27 = max(1, int(len(df_hepsi) * 0.27))
+                                df_ust, df_alt = df_hepsi.head(n_27), df_hepsi.tail(n_27)
+                                sonuclar = []
+                                for bolum, max_p in max_puanlar.items():
+                                    if bolum in df_hepsi.columns:
+                                        ust_ortalama = df_ust[bolum].mean()
+                                        alt_ortalama = df_alt[bolum].mean()
+                                        d_index = (ust_ortalama / max_p if max_p > 0 else 0) - (alt_ortalama / max_p if max_p > 0 else 0)
+                                        durum = "Çok İyi Madde" if d_index >= 0.40 else "İyi Madde" if d_index >= 0.30 else "Zayıf Madde" if d_index >= 0.20 else "Revize Edilmeli / Çıkarılmalı"
+                                        sonuclar.append({"Bölüm": bolum, "Max": max_p, "Üst %27": round(ust_ortalama, 2), "Alt %27": round(alt_ortalama, 2), "D İndeksi": round(d_index, 3), "Yorum": durum})
+                                df_s = pd.DataFrame(sonuclar)
+                                if not df_s.empty:
+                                    def renk_ver(val):
+                                        if not isinstance(val, str): return ''
+                                        if "Çok İyi" in val: return 'color: green; font-weight: bold;'
+                                        if "Revize" in val: return 'background-color: #FADBD8; color: black;'
+                                        return ''
+                                    try: styler = df_s.style.map(renk_ver, subset=['Yorum'])
+                                    except AttributeError: styler = df_s.style.applymap(renk_ver, subset=['Yorum'])
+                                    st.dataframe(styler, use_container_width=True)
 
             elif rapor_kapsami == "⚖️ Puanlayıcı Güvenirliği (Inter-Rater Reliability)":
-                cur.execute("SELECT sinav_kodu FROM sinavlar")
-                sinavlar = [r[0] for r in cur.fetchall()]
-                if not sinavlar: st.warning("Sınav bulunamadı.")
+                cur.execute("SELECT DISTINCT sube FROM notlar ORDER BY sube")
+                mevcut_subeler = [r[0] for r in cur.fetchall()]
+                if not mevcut_subeler: st.warning("Not girişi yapılmış şube bulunamadı.")
                 else:
-                    secilen_sinav_ir = st.selectbox("Sınav Seç", sinavlar)
-                    if st.button("Güvenirlik Analizi Çıkar", type="primary"):
-                        cur.execute("SELECT veri_json FROM notlar WHERE sinav_kodu=%s", (secilen_sinav_ir,))
-                        tum_ogrenciler = []
-                        for j in cur.fetchall(): tum_ogrenciler.extend(pd.read_json(io.StringIO(j[0])).to_dict('records'))
-                        df_ir = pd.DataFrame(tum_ogrenciler)
-                        if "Sınava Girdi" in df_ir.columns: df_ir = df_ir[df_ir["Sınava Girdi"] == True]
-                        okuma_1_kolonlari = [c for c in df_ir.columns if "(1. Okuma)" in c]
-                        if not okuma_1_kolonlari: st.warning("'(1. Okuma)' etiketi taşıyan sütun bulunamadı.")
-                        else:
-                            for ok1_col in okuma_1_kolonlari:
-                                ok2_col = ok1_col.replace("(1. Okuma)", "(2. Okuma)")
-                                if ok2_col in df_ir.columns:
-                                    st.markdown(f"#### 📊 Beceri: {ok1_col.replace(' - (1. Okuma)', '')}")
-                                    df_cift = df_ir[['Ad_Soyad', ok1_col, ok2_col]].copy().dropna()
-                                    df_cift['Puan Farkı'] = abs(df_cift[ok1_col] - df_cift[ok2_col])
-                                    if len(df_cift) > 2:
-                                        r_degeri = df_cift[ok1_col].corr(df_cift[ok2_col])
-                                        c1, c2, c3 = st.columns(3)
-                                        c1.metric("Korelasyon (r)", f"{r_degeri:.2f}")
-                                        c2.metric("1. Okuma Ort.", f"{df_cift[ok1_col].mean():.2f}")
-                                        c3.metric("2. Okuma Ort.", f"{df_cift[ok2_col].mean():.2f}")
-                                        st.write("**⚠️ Yüksek Sapma (Fark > 10):**")
-                                        st.dataframe(df_cift[df_cift['Puan Farkı'] > 10].sort_values(by="Puan Farkı", ascending=False), use_container_width=True)
-                                        st.divider()
+                    c_f1, c_f2 = st.columns(2)
+                    with c_f1:
+                        sec_sube_ir = st.selectbox("Şube Seçin", ["Tüm Şubeler"] + mevcut_subeler, key="ir_sube")
+                    if sec_sube_ir == "Tüm Şubeler":
+                        cur.execute("SELECT DISTINCT sinav_kodu FROM notlar ORDER BY sinav_kodu")
+                    else:
+                        cur.execute("SELECT DISTINCT sinav_kodu FROM notlar WHERE sube=%s ORDER BY sinav_kodu", (sec_sube_ir,))
+                    sinavlar = [r[0] for r in cur.fetchall()]
+                    if not sinavlar: st.warning("Bu şube için kayıtlı sınav notu bulunamadı.")
+                    else:
+                        with c_f2:
+                            secilen_sinav_ir = st.selectbox("Sınav Seç", sinavlar, key="ir_sinav")
+                        if st.button("Güvenirlik Analizi Çıkar", type="primary"):
+                            if sec_sube_ir == "Tüm Şubeler":
+                                cur.execute("SELECT veri_json FROM notlar WHERE sinav_kodu=%s", (secilen_sinav_ir,))
+                            else:
+                                cur.execute("SELECT veri_json FROM notlar WHERE sinav_kodu=%s AND sube=%s", (secilen_sinav_ir, sec_sube_ir))
+                            tum_ogrenciler = []
+                            for j in cur.fetchall(): tum_ogrenciler.extend(pd.read_json(io.StringIO(j[0])).to_dict('records'))
+                            df_ir = pd.DataFrame(tum_ogrenciler)
+                            if "Sınava Girdi" in df_ir.columns: df_ir = df_ir[df_ir["Sınava Girdi"] == True]
+                            okuma_1_kolonlari = [c for c in df_ir.columns if "(1. Okuma)" in c]
+                            if not okuma_1_kolonlari: st.warning("'(1. Okuma)' etiketi taşıyan sütun bulunamadı.")
+                            else:
+                                for ok1_col in okuma_1_kolonlari:
+                                    ok2_col = ok1_col.replace("(1. Okuma)", "(2. Okuma)")
+                                    if ok2_col in df_ir.columns:
+                                        st.markdown(f"#### 📊 Beceri: {ok1_col.replace(' - (1. Okuma)', '')}")
+                                        df_cift = df_ir[['Ad_Soyad', ok1_col, ok2_col]].copy().dropna()
+                                        df_cift['Puan Farkı'] = abs(df_cift[ok1_col] - df_cift[ok2_col])
+                                        if len(df_cift) > 2:
+                                            r_degeri = df_cift[ok1_col].corr(df_cift[ok2_col])
+                                            c1, c2, c3 = st.columns(3)
+                                            c1.metric("Korelasyon (r)", f"{r_degeri:.2f}")
+                                            c2.metric("1. Okuma Ort.", f"{df_cift[ok1_col].mean():.2f}")
+                                            c3.metric("2. Okuma Ort.", f"{df_cift[ok2_col].mean():.2f}")
+                                            st.write("**⚠️ Yüksek Sapma (Fark > 10):**")
+                                            st.dataframe(df_cift[df_cift['Puan Farkı'] > 10].sort_values(by="Puan Farkı", ascending=False), use_container_width=True)
+                                            st.divider()
             
             elif rapor_kapsami == "👤 Bireysel Karneler":
-                cur.execute("SELECT sinav_kodu FROM sinavlar")
-                sinavlar = [r[0] for r in cur.fetchall()]
-                if not sinavlar: st.warning("Kayıtlı sınav yok.")
+                cur.execute("SELECT DISTINCT sube FROM notlar ORDER BY sube")
+                subeler = [r[0] for r in cur.fetchall()]
+                if not subeler: st.warning("Not girişi yapılmış şube yok.")
                 else:
-                    sec_sinav = st.selectbox("Sınav Seçin", sinavlar)
-                    cur.execute("SELECT sube FROM notlar WHERE sinav_kodu=%s", (sec_sinav,))
-                    subeler = [r[0] for r in cur.fetchall()]
-                    if not subeler: st.warning("Bu sınava ait girilmiş not yok.")
+                    c_f1, c_f2 = st.columns(2)
+                    with c_f1:
+                        sec_sube = st.selectbox("Şube Seçin", subeler, key="bk_sube")
+                    cur.execute("SELECT DISTINCT sinav_kodu FROM notlar WHERE sube=%s ORDER BY sinav_kodu", (sec_sube,))
+                    sinavlar = [r[0] for r in cur.fetchall()]
+                    if not sinavlar: st.warning("Bu şubeye ait girilmiş sınav notu yok.")
                     else:
-                        sec_sube = st.selectbox("Şube Seçin", subeler)
+                        with c_f2:
+                            sec_sinav = st.selectbox("Sınav Seçin", sinavlar, key="bk_sinav")
                         
                         cur.execute("SELECT tolerans FROM sinav_ayarlari WHERE sinav_kodu=%s", (sec_sinav,))
                         tol_res = cur.fetchone()
@@ -1440,16 +1522,19 @@ else:
                                         st.download_button("📥 PDF Olarak İndir", data=pdf_buf, file_name=f"{tr_to_eng(sec_ogr).replace(' ', '_')}_ReportCard.pdf", mime="application/pdf")
             
             elif rapor_kapsami == "🏫 Sınıf / Şube Raporu (Excel Formatı)":
-                cur.execute("SELECT sinav_kodu FROM sinavlar")
-                sinavlar = [r[0] for r in cur.fetchall()]
-                if not sinavlar: st.warning("Kayıtlı sınav yok.")
+                cur.execute("SELECT DISTINCT sube FROM notlar ORDER BY sube")
+                subeler = [r[0] for r in cur.fetchall()]
+                if not subeler: st.warning("Not girişi yapılmış şube yok.")
                 else:
-                    sec_sinav = st.selectbox("Sınav Seçin", sinavlar, key="sr_sinav")
-                    cur.execute("SELECT sube FROM notlar WHERE sinav_kodu=%s", (sec_sinav,))
-                    subeler = [r[0] for r in cur.fetchall()]
-                    if not subeler: st.warning("Bu sınava ait not yok.")
-                    else:
+                    c_f1, c_f2 = st.columns(2)
+                    with c_f1:
                         sec_sube = st.selectbox("Şube Seçin", subeler, key="sr_sube")
+                    cur.execute("SELECT DISTINCT sinav_kodu FROM notlar WHERE sube=%s ORDER BY sinav_kodu", (sec_sube,))
+                    sinavlar = [r[0] for r in cur.fetchall()]
+                    if not sinavlar: st.warning("Bu şubeye ait girilmiş sınav notu yok.")
+                    else:
+                        with c_f2:
+                            sec_sinav = st.selectbox("Sınav Seçin", sinavlar, key="sr_sinav")
                         
                         cur.execute("SELECT ana_bolum, alt_bolum, kazanimlar, max_puan FROM sinav_tos WHERE sinav_kodu=%s", (sec_sinav,))
                         tos_df = pd.DataFrame(cur.fetchall(), columns=["ana_bolum", "alt_bolum", "kazanimlar", "max_puan"])
@@ -1541,42 +1626,43 @@ else:
             cur.close(); conn.close()
 
     # ----------------------------------------------------
-    # 5. HOCA VERİ GİRİŞ PANELİ (SEÇENEK C + PINNED SÜTUN)
+    # 5. HOCA VERİ GİRİŞ PANELİ (ŞUBE -> SINAV + SEÇENEK C)
     # ----------------------------------------------------
     elif st.session_state['rol'] == "Öğretim Elemanı":
         conn = get_db_connection()
         cur = conn.cursor()
         
-        cur.execute("SELECT modul FROM hoca_atamalari WHERE kullanici_adi=%s", (st.session_state['kullanici_adi'],))
-        hocanin_modulleri = set([r[0] for r in cur.fetchall()])
+        cur.execute("SELECT DISTINCT modul, sube FROM hoca_atamalari WHERE kullanici_adi=%s ORDER BY modul, sube", (st.session_state['kullanici_adi'],))
+        hoca_atamalari = cur.fetchall()
+        if not hoca_atamalari:
+            st.error("⚠️ Size tanımlanmış herhangi bir şube ataması bulunmamaktadır.")
+            st.stop()
         
-        cur.execute("SELECT sinav_kodu, kilitli FROM sinavlar")
+        cur.execute("SELECT sinav_kodu, kilitli FROM sinavlar ORDER BY sinav_kodu")
         sinav_data = cur.fetchall()
         if not sinav_data: st.warning("Sistemde açık sınav bulunmuyor."); st.stop()
         
-        acik_sinavlar = [row[0] for row in sinav_data if row[0].split("_")[0] in hocanin_modulleri]
-        if not acik_sinavlar: 
-            st.error("⚠️ Size tanımlanmış herhangi bir modüle ait aktif sınav bulunmamaktadır.")
-            st.stop()
-            
+        tum_sinav_kodlari = [row[0] for row in sinav_data]
         sinav_kilit_durumlari = {row[0]: row[1] for row in sinav_data}
         
-        col_sel1, col_sel2 = st.columns([2, 1])
+        sube_secenekleri = [f"{m} - {s}" for m, s in hoca_atamalari]
+        col_sel1, col_sel2 = st.columns([1, 2])
         with col_sel1:
-            secilen_islem_sinavi = st.selectbox("Sorumlu Olduğunuz Sınav", acik_sinavlar)
-        is_locked = sinav_kilit_durumlari.get(secilen_islem_sinavi, False)
+            secilen_sube_etiket = st.selectbox("Sorumlu Olduğunuz Şube", sube_secenekleri)
+        ilgili_modul, secilen_sube = secilen_sube_etiket.split(" - ", 1)
         
-        ilgili_modul = secilen_islem_sinavi.split("_")[0]
-        cur.execute("SELECT sube FROM hoca_atamalari WHERE modul=%s AND kullanici_adi=%s", (ilgili_modul, st.session_state['kullanici_adi']))
-        hoca_subeleri = [row[0] for row in cur.fetchall()]
-        if not hoca_subeleri: st.error("Bu sınavın modülünde size atanmış bir şube bulunmuyor."); st.stop()
-        
+        sube_sinavlari = filtrele_sube_sinavlari(tum_sinav_kodlari, ilgili_modul, secilen_sube)
+        if not sube_sinavlari:
+            st.warning(f"⚠️ **{secilen_sube}** şubesine ({ilgili_modul}) tanımlı aktif bir sınav bulunmamaktadır.")
+            st.stop()
+            
         with col_sel2:
-            secilen_sube = st.selectbox("Şube", hoca_subeleri)
+            secilen_islem_sinavi = st.selectbox("Şubeye Ait Sınav", sube_sinavlari)
+        is_locked = sinav_kilit_durumlari.get(secilen_islem_sinavi, False)
 
         # Seçenek C: Kompakt Profesyonel Üst Bant
         sinav_temiz_baslik = secilen_islem_sinavi.replace("_", " ")
-        durum_badge = '<span class="c-badge-locked">🔒 KİLİTLİ (Salt Okunur)</span>' if is_locked else '<span class="c-badge-open">● Not Girişine Açık</span>'
+        durum_badge = '<span class="c-badge-locked">🔒 KİLİTLİ</span>' if is_locked else '<span class="c-badge-open">● Not Girişine Açık</span>'
         st.markdown(f"""
         <div class="c-header-bar">
             <div>
