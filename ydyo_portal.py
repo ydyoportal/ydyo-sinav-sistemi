@@ -5,9 +5,14 @@ import psycopg2
 import json
 import io
 import zipfile
+import os
+import re
 import hashlib
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Flowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Flowable, Image
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
@@ -78,7 +83,7 @@ def get_db_backup_excel():
     return buffer
 
 # ==========================================
-# PDF VE EXCEL RAPORLAMA FONKSİYONLARI 
+# PDF VE EXCEL RAPORLAMA FONKSİYONLARI (SEÇENEK C)
 # ==========================================
 def tr_to_eng(text):
     if not isinstance(text, str): return str(text)
@@ -86,87 +91,336 @@ def tr_to_eng(text):
     for k, v in tr_map.items(): text = text.replace(k, v)
     return text
 
-class ModernBar(Flowable):
-    def __init__(self, width, height, percentage):
+FONT_HEADING = "Helvetica-Bold"
+FONT_BODY = "Helvetica"
+FONT_BODY_MED = "Helvetica-Bold"
+USE_TTF = False
+
+try:
+    if os.path.exists("fonts/DMSans-Bold.ttf") and os.path.exists("fonts/Jost-Regular.ttf"):
+        pdfmetrics.registerFont(TTFont("DMSans-Bold", "fonts/DMSans-Bold.ttf"))
+        pdfmetrics.registerFont(TTFont("Jost-Regular", "fonts/Jost-Regular.ttf"))
+        FONT_HEADING = "DMSans-Bold"
+        FONT_BODY = "Jost-Regular"
+        if os.path.exists("fonts/Jost-Medium.ttf"):
+            pdfmetrics.registerFont(TTFont("Jost-Medium", "fonts/Jost-Medium.ttf"))
+            FONT_BODY_MED = "Jost-Medium"
+        else:
+            FONT_BODY_MED = "DMSans-Bold"
+        USE_TTF = True
+except Exception:
+    pass
+
+def pdf_txt(text):
+    s = str(text) if text is not None else ""
+    return s if USE_TTF else tr_to_eng(s)
+
+def safe_float(val):
+    try:
+        s = str(val).strip().replace(',', '.')
+        if s.lower() in ['', 'nan', 'none', '<na>']: return 0.0
+        return float(s)
+    except Exception:
+        return 0.0
+
+def karne_satirlari_hazirla(tos_df, df_aktif, ogr_row, tolerans=6):
+    isaretler = [
+        ("1. Okuma", "2. Okuma", "3. Okuma"),
+        ("(1. Okuma)", "(2. Okuma)", "(3. Okuma)"),
+        ("1st", "2nd", "3rd"),
+        ("1. Hoca", "2. Hoca", "3. Hoca"),
+        ("(1)", "(2)", "(3)"),
+        ("Okuma 1", "Okuma 2", "Okuma 3"),
+        ("Rater 1", "Rater 2", "Rater 3"),
+        (" 1 ", " 2 ", " 3 "),
+        (" 1", " 2", " 3"),
+        ("1.", "2.", "3.")
+    ]
+    tos_map = {}
+    ordered_cols = []
+    for _, r in tos_df.iterrows():
+        col_key = f"{r['ana_bolum']} - {r['alt_bolum']}"
+        if col_key not in tos_map:
+            tos_map[col_key] = {"max": float(r['max_puan']), "kazanim": str(r['kazanimlar'] or "")}
+            ordered_cols.append(col_key)
+
+    eslesen_gruplar = {}
+    atlananlar = set()
+    for c1 in ordered_cols:
+        if c1 in atlananlar: continue
+        for m1, m2, m3 in isaretler:
+            if m1 in c1:
+                c2 = c1.replace(m1, m2)
+                c3 = c1.replace(m1, m3)
+                if c2 in tos_map:
+                    temiz_ad = re.sub(r'\s+', ' ', c1.replace(m1, "").replace("()", "")).strip()
+                    temiz_ad = re.sub(r'\s*-\s*', ' - ', temiz_ad).strip(" -")
+                    eslesen_gruplar[c1] = (c1, c2, c3 if c3 in tos_map else None, temiz_ad)
+                    atlananlar.update([c1, c2])
+                    if c3 in tos_map: atlananlar.add(c3)
+                    break
+
+    def cift_puan_hesapla(satir, c1, c2, c3):
+        v1 = safe_float(satir.get(c1, 0))
+        v2 = safe_float(satir.get(c2, 0))
+        if c3 and c3 in satir and abs(v1 - v2) > tolerans:
+            v3 = safe_float(satir.get(c3, 0))
+            if v3 > 0 or str(satir.get(c3, "")).strip() == "0":
+                d1, d2 = abs(v3 - v1), abs(v3 - v2)
+                if d1 < d2: return (v3 + v1) / 2.0
+                elif d2 < d1: return (v3 + v2) / 2.0
+                else: return (v3 + max(v1, v2)) / 2.0
+        return (v1 + v2) / 2.0
+
+    satirlar = []
+    for col in ordered_cols:
+        if col in eslesen_gruplar:
+            c1, c2, c3, temiz_ad = eslesen_gruplar[col]
+            m_puan = tos_map[c1]["max"]
+            kazanim = tos_map[c1]["kazanim"]
+            ogr_puan = round(cift_puan_hesapla(ogr_row, c1, c2, c3), 2)
+            if not df_aktif.empty:
+                sinif_puanlari = [cift_puan_hesapla(r, c1, c2, c3) for _, r in df_aktif.iterrows()]
+                sinif_ort = sum(sinif_puanlari) / len(sinif_puanlari)
+            else:
+                sinif_ort = 0.0
+            yuzde = (ogr_puan / m_puan * 100) if m_puan > 0 else 0.0
+            satirlar.append({
+                "bolum": temiz_ad,
+                "kazanim": kazanim,
+                "puan": ogr_puan,
+                "max": m_puan,
+                "sinif_ort": round(sinif_ort, 1),
+                "yuzde": min(max(yuzde, 0.0), 100.0)
+            })
+        elif col not in atlananlar:
+            m_puan = tos_map[col]["max"]
+            kazanim = tos_map[col]["kazanim"]
+            ogr_puan = round(safe_float(ogr_row.get(col, 0)), 2)
+            if not df_aktif.empty and col in df_aktif.columns:
+                sinif_ort = pd.to_numeric(df_aktif[col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0.0).mean()
+            else:
+                sinif_ort = 0.0
+            yuzde = (ogr_puan / m_puan * 100) if m_puan > 0 else 0.0
+            satirlar.append({
+                "bolum": col,
+                "kazanim": kazanim,
+                "puan": ogr_puan,
+                "max": m_puan,
+                "sinif_ort": round(sinif_ort, 1),
+                "yuzde": min(max(yuzde, 0.0), 100.0)
+            })
+    return satirlar
+
+class ModernBarWithLabel(Flowable):
+    def __init__(self, bar_width, height, percentage):
         Flowable.__init__(self)
-        self.width = width; self.height = height; self.percentage = max(0, min(100, percentage))
-        if self.percentage >= 75: self.color = colors.HexColor("#27AE60")
-        elif self.percentage >= 50: self.color = colors.HexColor("#F1C40F")
-        else: self.color = colors.HexColor("#E74C3C")
-    
+        self.bar_width = bar_width
+        self.height = height
+        self.percentage = max(0.0, min(100.0, float(percentage)))
+        self.width = bar_width + 28
+        if self.percentage >= 75: self.color = colors.HexColor("#16A34A")
+        elif self.percentage >= 50: self.color = colors.HexColor("#EAB308")
+        else: self.color = colors.HexColor("#DC2626")
+
     def wrap(self, availWidth, availHeight):
-        return (self.width, self.height)
-        
+        return (self.width, max(self.height, 10))
+
     def draw(self):
-        self.canv.setFillColor(colors.HexColor("#EAECEE"))
-        self.canv.roundRect(0, 0, self.width, self.height, 3, fill=1, stroke=0)
-        fill_width = (self.width * self.percentage) / 100
-        if fill_width > 0:
+        y_off = 2
+        self.canv.setFillColor(colors.HexColor("#E2E8F0"))
+        self.canv.roundRect(0, y_off, self.bar_width, self.height, 3, fill=1, stroke=0)
+        fill_w = (self.bar_width * self.percentage) / 100.0
+        if fill_w > 0:
             self.canv.setFillColor(self.color)
-            self.canv.roundRect(0, 0, fill_width, self.height, 3, fill=1, stroke=0)
+            self.canv.roundRect(0, y_off, max(fill_w, 3), self.height, 3, fill=1, stroke=0)
+        self.canv.setFont(FONT_BODY_MED, 7.5)
+        self.canv.setFillColor(colors.HexColor("#334155"))
+        self.canv.drawString(self.bar_width + 5, y_off + 0.5, f"{self.percentage:.0f}%")
 
-styles = getSampleStyleSheet()
-header_style = ParagraphStyle('Header', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=14, textColor=colors.HexColor("#1A365D"), alignment=1, spaceAfter=5)
-sub_header_style = ParagraphStyle('SubHeader', parent=styles['Normal'], fontName='Helvetica', fontSize=10, textColor=colors.grey, alignment=1, spaceAfter=20)
-title_style = ParagraphStyle('ModernTitle', parent=styles['Title'], fontName='Helvetica-Bold', fontSize=16, textColor=colors.HexColor("#2C3E50"), spaceAfter=10)
-info_style = ParagraphStyle('Info', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor("#E84C0F"), spaceAfter=15)
-cell_style = ParagraphStyle('Cell', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=1, wordWrap='CJK')
-cell_style_left = ParagraphStyle('CellLeft', parent=styles['Normal'], fontName='Helvetica', fontSize=8, alignment=0, wordWrap='CJK')
-header_cell_style = ParagraphStyle('HeaderCell', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9, textColor=colors.whitesmoke, alignment=1, wordWrap='CJK')
-
-def build_pdf_doc(elements):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=40, bottomMargin=30)
-    doc.build(elements)
-    buffer.seek(0)
-    return buffer
+def _draw_footer(canvas, doc):
+    canvas.saveState()
+    canvas.setStrokeColor(colors.HexColor("#CBD5E1"))
+    canvas.setLineWidth(0.6)
+    canvas.line(28, 32, A4[0] - 28, 32)
+    canvas.setFont(FONT_BODY, 7.5)
+    canvas.setFillColor(colors.HexColor("#64748B"))
+    canvas.drawString(28, 20, pdf_txt("SoFL | Testing and Evaluation Office"))
+    canvas.drawRightString(A4[0] - 28, 20, pdf_txt("KTO Karatay University"))
+    canvas.restoreState()
 
 def create_modern_pdf(rapor_verileri):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=28, leftMargin=28, topMargin=26, bottomMargin=42)
     elements = []
+
+    st_banner_uni = ParagraphStyle('BannerUni', fontName=FONT_HEADING, fontSize=12.5, leading=15, textColor=colors.white)
+    st_banner_dept = ParagraphStyle('BannerDept', fontName=FONT_BODY, fontSize=8.5, leading=11, textColor=colors.HexColor("#CBD5E1"))
+    st_banner_exam = ParagraphStyle('BannerExam', fontName=FONT_HEADING, fontSize=12, leading=14, textColor=colors.white, alignment=2)
+    st_banner_sub = ParagraphStyle('BannerSub', fontName=FONT_BODY_MED, fontSize=7.5, leading=10, textColor=colors.HexColor("#FDBA74"), alignment=2)
+    st_stu_left = ParagraphStyle('StuLeft', fontName=FONT_BODY, fontSize=9, leading=12, textColor=colors.HexColor("#1E293B"))
+    st_stu_right = ParagraphStyle('StuRight', fontName=FONT_BODY, fontSize=9, leading=12, textColor=colors.HexColor("#1E293B"), alignment=2)
+    st_kpi_lbl = ParagraphStyle('KpiLbl', fontName=FONT_HEADING, fontSize=7, leading=9, textColor=colors.HexColor("#64748B"), alignment=1)
+    st_kpi_val_orange = ParagraphStyle('KpiValO', fontName=FONT_HEADING, fontSize=13, leading=16, textColor=colors.HexColor("#E84C0F"), alignment=1)
+    st_kpi_val_navy = ParagraphStyle('KpiValN', fontName=FONT_HEADING, fontSize=12, leading=16, textColor=colors.HexColor("#1A365D"), alignment=1)
+    st_th = ParagraphStyle('TH', fontName=FONT_HEADING, fontSize=7.5, leading=9.5, textColor=colors.white, alignment=1)
+    st_th_left = ParagraphStyle('THL', fontName=FONT_HEADING, fontSize=7.5, leading=9.5, textColor=colors.white, alignment=0)
+
     for idx, veri in enumerate(rapor_verileri):
-        elements.append(Paragraph("KTO KARATAY UNIVERSITY", header_style))
-        elements.append(Paragraph("School of Foreign Languages | Testing Office", sub_header_style))
-        elements.append(Paragraph(tr_to_eng(veri['baslik']), title_style))
-        if veri.get('alt_baslik'): elements.append(Paragraph(tr_to_eng(veri['alt_baslik']), info_style))
-        
-        if veri.get('beceri_grafik_verisi'):
-            elements.append(Paragraph("<b>Skill Profile</b>", styles['Heading4']))
-            elements.append(Spacer(1, 5))
-            b_data = []
-            for b_name, b_val in veri['beceri_grafik_verisi'].items():
-                bar = ModernBar(120, 10, b_val)
-                b_data.append([Paragraph(tr_to_eng(b_name), cell_style_left), bar, Paragraph(f"%{b_val:.1f}", cell_style)])
-            if b_data:
-                b_table = Table(b_data, colWidths=[120, 130, 50])
-                b_table.setStyle(TableStyle([('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('BOTTOMPADDING', (0,0), (-1,-1), 4), ('TOPPADDING', (0,0), (-1,-1), 4)]))
-                elements.extend([b_table, Spacer(1, 15)])
-                
-        df_listesi = veri.get('df_list', [])
-        for tablo_baslik, df_tablo in df_listesi:
-            if not df_tablo.empty:
-                if tablo_baslik:
-                    elements.append(Paragraph(f"<b>{tr_to_eng(tablo_baslik)}</b>", styles['Heading4']))
-                    elements.append(Spacer(1, 5))
-                df_temp = df_tablo.copy()
-                df_temp.columns = [tr_to_eng(c) for c in df_temp.columns]
-                cols_count = len(df_temp.columns)
-                if cols_count == 4: col_widths = [100, 295, 70, 70]
-                else: col_widths = [535 / max(1, cols_count)] * cols_count
-                tablo_verisi = [[Paragraph(c, header_cell_style) for c in df_temp.columns]]
-                for _, row in df_temp.iterrows():
-                    row_data = []
-                    for col_idx, cell_val in enumerate(row):
-                        c_style = cell_style_left if cols_count == 4 and col_idx in [0, 1] else cell_style
-                        row_data.append(Paragraph(tr_to_eng(str(cell_val)), c_style))
-                    tablo_verisi.append(row_data)
-                tablo = Table(tablo_verisi, colWidths=col_widths, repeatRows=1)
-                t_style = [('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1A365D")), ('ALIGN', (0,0), (-1,-1), 'CENTER'), ('VALIGN', (0,0), (-1,-1), 'MIDDLE'), ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey)]
-                for i in range(1, len(tablo_verisi)):
-                    if i % 2 == 0: t_style.append(('BACKGROUND', (0,i), (-1,i), colors.HexColor("#F8F9F9")))
-                tablo.setStyle(TableStyle(t_style))
-                elements.extend([tablo, Spacer(1, 20)])
-        if idx < len(rapor_verileri) - 1: elements.append(PageBreak())
-    return build_pdf_doc(elements)
+        sinav_temiz = str(veri.get('sinav_kodu', '')).replace('_', ' ').strip()
+        ogr_ad = pdf_txt(veri.get('ogr_ad', ''))
+        ogr_no = pdf_txt(veri.get('ogr_no', ''))
+        sube = pdf_txt(veri.get('sube', ''))
+        kitapcik = pdf_txt(veri.get('kitapcik', 'A'))
+        toplam_not = safe_float(veri.get('toplam_not', 0))
+        sinif_genel_ort = safe_float(veri.get('sinif_genel_ort', 0))
+        satirlar = veri.get('satirlar', [])
+
+        # 1. ÜST LACİVERT KURUMSAL BANT (SEÇENEK C)
+        sol_metin = [
+            Paragraph("KTO KARATAY UNIVERSITY", st_banner_uni),
+            Paragraph("Department of Foreign Languages | English Preparatory Program", st_banner_dept)
+        ]
+        sag_metin = [
+            Paragraph(pdf_txt(sinav_temiz), st_banner_exam),
+            Paragraph("INDIVIDUAL REPORT CARD", st_banner_sub)
+        ]
+
+        if os.path.exists("logo.png"):
+            try:
+                ir = ImageReader("logo.png")
+                iw, ih = ir.getSize()
+                logo_h = 34
+                logo_w = min(logo_h * (iw / float(ih)), 105)
+                logo_img = Image("logo.png", width=logo_w, height=logo_h)
+                banner_data = [[logo_img, sol_metin, sag_metin]]
+                banner_widths = [logo_w + 10, 539 - (logo_w + 10) - 145, 145]
+            except Exception:
+                banner_data = [[sol_metin, sag_metin]]
+                banner_widths = [394, 145]
+        else:
+            banner_data = [[sol_metin, sag_metin]]
+            banner_widths = [394, 145]
+
+        banner_table = Table(banner_data, colWidths=banner_widths)
+        banner_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#1A365D")),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+            ('LEFTPADDING', (0, 0), (0, -1), 12),
+            ('RIGHTPADDING', (-1, 0), (-1, -1), 12),
+            ('LINEBELOW', (0, 0), (-1, 0), 2.5, colors.HexColor("#E84C0F")),
+        ]))
+        elements.append(banner_table)
+        elements.append(Spacer(1, 10))
+
+        # 2. ÖĞRENCİ KİMLİK ŞERİDİ
+        stu_table = Table(
+            [[Paragraph(f"<font name='{FONT_HEADING}' color='#1A365D'>STUDENT:</font>  {ogr_ad}", st_stu_left),
+              Paragraph(f"<font name='{FONT_HEADING}' color='#1A365D'>STUDENT ID:</font>  {ogr_no}", st_stu_right)]],
+            colWidths=[359, 180]
+        )
+        stu_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#F1F5F9")),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (0, -1), 10),
+            ('RIGHTPADDING', (-1, 0), (-1, -1), 10),
+        ]))
+        elements.append(stu_table)
+        elements.append(Spacer(1, 8))
+
+        # 3. 4'LÜ KOMPAKT KPI KARTLARI
+        def kpi_box(label, value_text, val_style, accent_hex):
+            t = Table([[Paragraph(label, st_kpi_lbl)], [Paragraph(value_text, val_style)]], colWidths=[128])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.white),
+                ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+                ('LINEABOVE', (0, 0), (-1, 0), 2, colors.HexColor(accent_hex)),
+                ('TOPPADDING', (0, 0), (-1, 0), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 2),
+                ('TOPPADDING', (0, 1), (-1, 1), 1),
+                ('BOTTOMPADDING', (0, 1), (-1, 1), 6),
+            ]))
+            return t
+
+        kpi_strip = Table([[
+            kpi_box("TOTAL SCORE", f"{toplam_not:.2f}", st_kpi_val_orange, "#E84C0F"),
+            "",
+            kpi_box("CLASS AVERAGE", f"{sinif_genel_ort:.2f}", st_kpi_val_navy, "#1A365D"),
+            "",
+            kpi_box("CLASS", sube, st_kpi_val_navy, "#1A365D"),
+            "",
+            kpi_box("BOOKLET", kitapcik, st_kpi_val_navy, "#1A365D")
+        ]], colWidths=[128, 9, 128, 9, 128, 9, 128])
+        kpi_strip.setStyle(TableStyle([
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        elements.append(kpi_strip)
+        elements.append(Spacer(1, 12))
+
+        # 4. BÜTÜNLEŞİK PERFORMANS VE KAZANIM TABLOSU
+        compact = len(satirlar) > 13
+        body_fs = 7.5 if compact else 8.2
+        pad_v = 3.5 if compact else 5.0
+
+        st_sec = ParagraphStyle('Sec', fontName=FONT_BODY_MED, fontSize=body_fs, leading=body_fs + 2, textColor=colors.HexColor("#1E293B"))
+        st_obj = ParagraphStyle('Obj', fontName=FONT_BODY, fontSize=body_fs, leading=body_fs + 2, textColor=colors.HexColor("#475569"))
+        st_num = ParagraphStyle('Num', fontName=FONT_BODY_MED, fontSize=body_fs, leading=body_fs + 2, textColor=colors.HexColor("#0F172A"), alignment=1)
+        st_avg = ParagraphStyle('Avg', fontName=FONT_BODY, fontSize=body_fs, leading=body_fs + 2, textColor=colors.HexColor("#64748B"), alignment=1)
+
+        tablo_verisi = [[
+            Paragraph("SECTION", st_th_left),
+            Paragraph("LEARNING OBJECTIVES", st_th_left),
+            Paragraph("SCORE", st_th),
+            Paragraph("CLASS AVG", st_th),
+            Paragraph("PERFORMANCE", st_th)
+        ]]
+
+        for s in satirlar:
+            puan_str = f"{s['puan']:g} / {s['max']:g}"
+            ort_str = f"{s['sinif_ort']:.1f}"
+            bar = ModernBarWithLabel(48, 6.5, s['yuzde'])
+            tablo_verisi.append([
+                Paragraph(pdf_txt(s['bolum']), st_sec),
+                Paragraph(pdf_txt(s['kazanim']), st_obj),
+                Paragraph(puan_str, st_num),
+                Paragraph(ort_str, st_avg),
+                bar
+            ])
+
+        main_table = Table(tablo_verisi, colWidths=[108, 233, 58, 54, 86], repeatRows=1)
+        t_style = [
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#1A365D")),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('ALIGN', (2, 0), (-1, -1), 'CENTER'),
+            ('TOPPADDING', (0, 0), (-1, 0), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+            ('TOPPADDING', (0, 1), (-1, -1), pad_v),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), pad_v),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('LINEBELOW', (0, 1), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
+            ('LINEBELOW', (0, -1), (-1, -1), 1.0, colors.HexColor("#1A365D")),
+        ]
+        for i in range(1, len(tablo_verisi)):
+            if i % 2 == 0:
+                t_style.append(('BACKGROUND', (0, i), (-1, i), colors.HexColor("#F8FAFC")))
+        main_table.setStyle(TableStyle(t_style))
+        elements.append(main_table)
+
+        if idx < len(rapor_verileri) - 1:
+            elements.append(PageBreak())
+
+    doc.build(elements, onFirstPage=_draw_footer, onLaterPages=_draw_footer)
+    buffer.seek(0)
+    return buffer
 
 # ==========================================
 # GİRİŞ KAPISI VE OTURUM
@@ -706,14 +960,21 @@ else:
                     else:
                         sec_sube = st.selectbox("Şube Seçin", subeler)
                         
+                        cur.execute("SELECT tolerans FROM sinav_ayarlari WHERE sinav_kodu=%s", (sec_sinav,))
+                        tol_res = cur.fetchone()
+                        sinav_tol = int(tol_res[0]) if (tol_res and tol_res[0] is not None) else 6
+                        
                         cur.execute("SELECT ana_bolum, alt_bolum, kazanimlar, max_puan FROM sinav_tos WHERE sinav_kodu=%s", (sec_sinav,))
                         tos_df = pd.DataFrame(cur.fetchall(), columns=["ana_bolum", "alt_bolum", "kazanimlar", "max_puan"])
-                        tos_dict = {f"{row['ana_bolum']} - {row['alt_bolum']}": {"max": float(row['max_puan']), "kazanim": row['kazanimlar']} for _, row in tos_df.iterrows()}
                         
                         cur.execute("SELECT veri_json FROM notlar WHERE sinav_kodu=%s AND sube=%s", (sec_sinav, sec_sube))
                         df_k = pd.read_json(io.StringIO(cur.fetchone()[0]))
                         
                         if not df_k.empty:
+                            if "Sınava Girdi" not in df_k.columns: df_k["Sınava Girdi"] = True
+                            df_k_aktif = df_k[df_k["Sınava Girdi"] == True].copy()
+                            sinif_genel_ort = pd.to_numeric(df_k_aktif["Sınav Notu"], errors='coerce').fillna(0.0).mean() if not df_k_aktif.empty else 0.0
+                            
                             sec_ogr = st.selectbox("Öğrenci Seçin", df_k['Ad_Soyad'].tolist())
                             ogr_veri = df_k[df_k['Ad_Soyad'] == sec_ogr].iloc[0]
                             
@@ -724,35 +985,26 @@ else:
                             if not katildi_mi:
                                 st.error("⚠️ Bu öğrenci sınava katılmamıştır. (Absent)")
                             else:
-                                b_yuzdeleri = {}
-                                for col, veri_dict in tos_dict.items():
-                                    if col in ogr_veri:
-                                        try: alinan = float(str(ogr_veri[col]).replace(',', '.'))
-                                        except: alinan = 0.0
-                                            
-                                        m_puan = veri_dict["max"]
-                                        yuzde = (alinan / m_puan * 100) if m_puan > 0 else 0
-                                        b_yuzdeleri[col] = yuzde
-                                        st.write(f"**{col}** | Kazanım: *{veri_dict['kazanim']}* ({alinan} / {m_puan})")
-                                        st.progress(min(int(yuzde), 100))
+                                satirlar = karne_satirlari_hazirla(tos_df, df_k_aktif, ogr_veri, sinav_tol)
+                                for s in satirlar:
+                                    st.write(f"**{s['bolum']}** | Kazanım: *{s['kazanim']}* ({s['puan']:g} / {s['max']:g} | Sınıf Ort: {s['sinif_ort']:.1f})")
+                                    st.progress(min(int(s['yuzde']), 100))
                                 
                                 if st.button("📄 PDF Karne Oluştur", type="primary"):
-                                    safe_scores = []
-                                    for c in tos_dict.keys():
-                                        try: safe_scores.append(float(str(ogr_veri.get(c, 0)).replace(',', '.')))
-                                        except: safe_scores.append(0.0)
-                                        
-                                    df_pdf = pd.DataFrame({
-                                        "Section / Skill": list(tos_dict.keys()), 
-                                        "Objectives": [tos_dict[c]['kazanim'] for c in tos_dict.keys()],
-                                        "Score Achieved": safe_scores,
-                                        "Max Score": [tos_dict[c]['max'] for c in tos_dict.keys()]
-                                    })
-                                    r_veri = [{'baslik': f"{sec_sinav} - Individual Report Card", 'alt_baslik': f"Student: {sec_ogr} | Class: {sec_sube} | Booklet: {bkl} | Total Score: {ogr_veri.get('Sınav Notu', 0)}", 'df_list': [("Skill & Objectives Details", df_pdf)], 'beceri_grafik_verisi': b_yuzdeleri}]
+                                    r_veri = [{
+                                        'sinav_kodu': sec_sinav,
+                                        'ogr_no': str(ogr_veri.get('Ogrenci_No', '')).strip(),
+                                        'ogr_ad': sec_ogr,
+                                        'sube': sec_sube,
+                                        'kitapcik': bkl,
+                                        'toplam_not': ogr_veri.get('Sınav Notu', 0),
+                                        'sinif_genel_ort': sinif_genel_ort,
+                                        'satirlar': satirlar
+                                    }]
                                     pdf_buf = create_modern_pdf(r_veri)
                                     if pdf_buf:
                                         st.success("PDF başarıyla oluşturuldu!")
-                                        st.download_button("📥 PDF Olarak İndir", data=pdf_buf, file_name=f"{sec_ogr}_ReportCard.pdf", mime="application/pdf")
+                                        st.download_button("📥 PDF Olarak İndir", data=pdf_buf, file_name=f"{tr_to_eng(sec_ogr).replace(' ', '_')}_ReportCard.pdf", mime="application/pdf")
             
             elif rapor_kapsami == "🏫 Sınıf / Şube Raporu (Excel Formatı)":
                 cur.execute("SELECT sinav_kodu FROM sinavlar")
@@ -839,6 +1091,11 @@ else:
                                 if df_aktif.empty:
                                     st.warning("Sınava giren öğrenci bulunmuyor.")
                                 else:
+                                    cur.execute("SELECT tolerans FROM sinav_ayarlari WHERE sinav_kodu=%s", (sec_sinav,))
+                                    tol_res = cur.fetchone()
+                                    sinav_tol = int(tol_res[0]) if (tol_res and tol_res[0] is not None) else 6
+                                    sinif_genel_ort = pd.to_numeric(df_aktif["Sınav Notu"], errors='coerce').fillna(0.0).mean() if not df_aktif.empty else 0.0
+                                    
                                     zip_buffer = io.BytesIO()
                                     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
                                         for _, row in df_aktif.sort_values(by="Ad_Soyad").iterrows():
@@ -846,27 +1103,17 @@ else:
                                             ogr_ad = str(row.get('Ad_Soyad', '')).strip()
                                             toplam = row.get('Sınav Notu', 0)
                                             bkl = row.get('Kitapçık', 'A')
-                                            b_yuzdeleri = {}
-                                            for c, v_dict in tos_dict.items():
-                                                mp = v_dict['max']
-                                                if c in row: b_yuzdeleri[c] = (row[c]/mp*100) if mp>0 else 0
+                                            satirlar = karne_satirlari_hazirla(tos_df, df_aktif, row, sinav_tol)
                                             
-                                            safe_scores = []
-                                            for c in tos_dict.keys():
-                                                try: safe_scores.append(float(str(row.get(c, 0)).replace(',', '.')))
-                                                except: safe_scores.append(0.0)
-                                                
-                                            df_pdf = pd.DataFrame({
-                                                "Section / Skill": list(tos_dict.keys()), 
-                                                "Objectives": [tos_dict[c]['kazanim'] for c in tos_dict.keys()], 
-                                                "Score Achieved": safe_scores, 
-                                                "Max Score": [tos_dict[c]['max'] for c in tos_dict.keys()]
-                                            })
                                             tek_veri = [{
-                                                'baslik': f"{sec_sinav} - Individual Report Card",
-                                                'alt_baslik': f"Student: {ogr_no} - {ogr_ad} | Booklet: {bkl} | Total Score: {toplam}",
-                                                'df_list': [("Skill & Objectives Details", df_pdf)],
-                                                'beceri_grafik_verisi': b_yuzdeleri
+                                                'sinav_kodu': sec_sinav,
+                                                'ogr_no': ogr_no,
+                                                'ogr_ad': ogr_ad,
+                                                'sube': sec_sube,
+                                                'kitapcik': bkl,
+                                                'toplam_not': toplam,
+                                                'sinif_genel_ort': sinif_genel_ort,
+                                                'satirlar': satirlar
                                             }]
                                             pdf_buf = create_modern_pdf(tek_veri)
                                             temiz_ad = tr_to_eng(ogr_ad).replace(" ", "_")
