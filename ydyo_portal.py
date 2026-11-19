@@ -8,6 +8,10 @@ import zipfile
 import os
 import re
 import hashlib
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+from openpyxl.drawing.image import Image as XLImage
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Flowable, Image
 from reportlab.lib.utils import ImageReader
@@ -122,6 +126,264 @@ def safe_float(val):
         return float(s)
     except Exception:
         return 0.0
+
+def create_corporate_class_excel(sec_sinav, sec_sube, df_s, df_aktif, cols_to_show, beceri_listesi):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sınıf Raporu"
+    ws.views.sheetView[0].showGridLines = False
+
+    df_excel = df_s[cols_to_show].sort_values(by="Sınav Notu", ascending=False).copy()
+    df_excel["Sınava Girdi"] = df_excel["Sınava Girdi"].map({True: "Katıldı", False: "Girmedi"})
+    df_excel = df_excel.rename(columns={
+        "Ogrenci_No": "Öğrenci No",
+        "Ad_Soyad": "Ad Soyad",
+        "Sınav Notu": "Toplam Not"
+    })
+
+    headers = list(df_excel.columns)
+    num_cols = max(len(headers), 5)
+    last_col_letter = get_column_letter(num_cols)
+
+    # Stiller
+    fill_navy = PatternFill(start_color="1A365D", end_color="1A365D", fill_type="solid")
+    fill_zebra = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+    fill_kpi_lbl = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+    fill_white = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+    fill_green = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")
+    fill_yellow = PatternFill(start_color="FEF9C3", end_color="FEF9C3", fill_type="solid")
+    fill_red = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+
+    font_uni = Font(name="Calibri", size=14, bold=True, color="FFFFFF")
+    font_sub = Font(name="Calibri", size=10, color="CBD5E1")
+    font_sec_title = Font(name="Calibri", size=11, bold=True, color="1A365D")
+    font_th = Font(name="Calibri", size=9, bold=True, color="FFFFFF")
+    font_td = Font(name="Calibri", size=9, color="1E293B")
+    font_td_bold = Font(name="Calibri", size=9, bold=True, color="1A365D")
+    font_kpi_lbl = Font(name="Calibri", size=8, bold=True, color="64748B")
+    font_kpi_orange = Font(name="Calibri", size=13, bold=True, color="E84C0F")
+    font_kpi_navy = Font(name="Calibri", size=12, bold=True, color="1A365D")
+    font_green = Font(name="Calibri", size=9, bold=True, color="166534")
+    font_yellow = Font(name="Calibri", size=9, bold=True, color="854D0E")
+    font_red = Font(name="Calibri", size=9, bold=True, color="991B1B")
+    font_footer = Font(name="Calibri", size=8, italic=True, color="64748B")
+
+    thin_gray = Side(border_style="thin", color="E2E8F0")
+    med_orange = Side(border_style="medium", color="E84C0F")
+    med_navy = Side(border_style="medium", color="1A365D")
+
+    border_cell = Border(left=thin_gray, right=thin_gray, top=thin_gray, bottom=thin_gray)
+    border_banner_bottom = Border(bottom=med_orange)
+    border_kpi_top_orange = Border(top=med_orange, left=thin_gray, right=thin_gray)
+    border_kpi_top_navy = Border(top=med_navy, left=thin_gray, right=thin_gray)
+    border_kpi_bottom = Border(bottom=thin_gray, left=thin_gray, right=thin_gray)
+
+    # 1. ÜST KURUMSAL BANT + LOGO
+    ws.row_dimensions[1].height = 28
+    ws.row_dimensions[2].height = 20
+    for r in [1, 2]:
+        for c in range(1, num_cols + 1):
+            cell = ws.cell(row=r, column=c)
+            cell.fill = fill_navy
+            if r == 2:
+                cell.border = border_banner_bottom
+
+    logo_added = False
+    if os.path.exists("logo.png"):
+        try:
+            xl_img = XLImage("logo.png")
+            ratio = xl_img.width / float(xl_img.height) if xl_img.height else 1.0
+            xl_img.height = 46
+            xl_img.width = int(46 * ratio)
+            ws.add_image(xl_img, "A1")
+            logo_added = True
+        except Exception:
+            logo_added = False
+
+    start_col_text = "B" if logo_added else "A"
+    ws.merge_cells(f"{start_col_text}1:{last_col_letter}1")
+    ws.merge_cells(f"{start_col_text}2:{last_col_letter}2")
+
+    sinav_temiz = str(sec_sinav).replace("_", " ").strip()
+    c_uni = ws[f"{start_col_text}1"]
+    c_uni.value = f"KTO KARATAY UNIVERSITY  |  {sinav_temiz} - {sec_sube} CLASS PERFORMANCE REPORT"
+    c_uni.font = font_uni
+    c_uni.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+
+    c_sub = ws[f"{start_col_text}2"]
+    c_sub.value = "Department of Foreign Languages | English Preparatory Program"
+    c_sub.font = font_sub
+    c_sub.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+
+    # 2. KPI ŞERİDİ (Satır 4-5)
+    ws.row_dimensions[3].height = 10
+    ws.row_dimensions[4].height = 18
+    ws.row_dimensions[5].height = 24
+
+    kpi_items = [
+        ("SINIF ORTALAMASI", f"{df_aktif['Sınav Notu'].mean():.2f}" if not df_aktif.empty else "0.00", True),
+        ("MEDYAN", f"{df_aktif['Sınav Notu'].median():.2f}" if not df_aktif.empty else "0.00", False),
+        ("EN YÜKSEK NOT", f"{df_aktif['Sınav Notu'].max():.2f}" if not df_aktif.empty else "0.00", False),
+        ("EN DÜŞÜK NOT", f"{df_aktif['Sınav Notu'].min():.2f}" if not df_aktif.empty else "0.00", False),
+        ("AKTİF ÖĞRENCİ", str(len(df_aktif)), False),
+    ]
+    for idx, (lbl, val, is_primary) in enumerate(kpi_items, start=1):
+        c_lbl = ws.cell(row=4, column=idx, value=lbl)
+        c_lbl.font = font_kpi_lbl
+        c_lbl.fill = fill_kpi_lbl
+        c_lbl.alignment = Alignment(horizontal="center", vertical="center")
+        c_lbl.border = border_kpi_top_orange if is_primary else border_kpi_top_navy
+
+        c_val = ws.cell(row=5, column=idx, value=val)
+        c_val.font = font_kpi_orange if is_primary else font_kpi_navy
+        c_val.fill = fill_white
+        c_val.alignment = Alignment(horizontal="center", vertical="center")
+        c_val.border = border_kpi_bottom
+
+    # 3. ÖĞRENCİ NOTLARI TABLOSU
+    ws.row_dimensions[6].height = 12
+    ws.row_dimensions[7].height = 20
+    ws.merge_cells(f"A7:{last_col_letter}7")
+    c_t1 = ws["A7"]
+    c_t1.value = "ÖĞRENCİ NOTLARI VE DETAY TABLOSU"
+    c_t1.font = font_sec_title
+    c_t1.alignment = Alignment(horizontal="left", vertical="center")
+
+    header_row = 8
+    ws.row_dimensions[header_row].height = 30
+    for c_idx, col_name in enumerate(headers, start=1):
+        cell = ws.cell(row=header_row, column=c_idx, value=col_name)
+        cell.font = font_th
+        cell.fill = fill_navy
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = border_cell
+
+    curr_row = header_row + 1
+    for r_i, (_, row) in enumerate(df_excel.iterrows()):
+        ws.row_dimensions[curr_row].height = 20
+        is_zebra = (r_i % 2 == 1)
+        row_fill = fill_zebra if is_zebra else fill_white
+        for c_idx, col_name in enumerate(headers, start=1):
+            val = row[col_name]
+            cell = ws.cell(row=curr_row, column=c_idx, value=val)
+            cell.fill = row_fill
+            cell.border = border_cell
+            if col_name == "Ad Soyad":
+                cell.font = font_td
+                cell.alignment = Alignment(horizontal="left", vertical="center")
+            elif col_name == "Toplam Not":
+                cell.font = font_td_bold
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            elif col_name == "Sınava Girdi" and str(val) == "Girmedi":
+                cell.font = font_red
+                cell.fill = fill_red
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+            else:
+                cell.font = font_td
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+        curr_row += 1
+
+    # 4. BECERİ VE KAZANIM ANALİZİ (ALT BLOK)
+    if beceri_listesi:
+        curr_row += 1
+        ws.row_dimensions[curr_row].height = 20
+        ws.merge_cells(f"A{curr_row}:{last_col_letter}{curr_row}")
+        c_t2 = ws[f"A{curr_row}"]
+        c_t2.value = "BECERİ VE KAZANIM ANALİZİ"
+        c_t2.font = font_sec_title
+        c_t2.alignment = Alignment(horizontal="left", vertical="center")
+        curr_row += 1
+
+        ws.row_dimensions[curr_row].height = 24
+        use_wide_merge = (num_cols >= 7)
+        if use_wide_merge:
+            # A: Bölüm, B-D: Kazanım (birleşik), E: Sınıf Ort., F: Max Puan, G: Başarı (%)
+            ws.cell(row=curr_row, column=1, value="Bölüm")
+            ws.merge_cells(start_row=curr_row, start_column=2, end_row=curr_row, end_column=4)
+            ws.cell(row=curr_row, column=2, value="Ölçülen Kazanım")
+            ws.cell(row=curr_row, column=5, value="Sınıf Ort.")
+            ws.cell(row=curr_row, column=6, value="Max Puan")
+            ws.cell(row=curr_row, column=7, value="Başarı (%)")
+            for c_i in range(1, 8):
+                hc = ws.cell(row=curr_row, column=c_i)
+                hc.font = font_th
+                hc.fill = fill_navy
+                hc.alignment = Alignment(horizontal="center" if c_i != 2 else "left", vertical="center")
+                hc.border = border_cell
+        else:
+            b_headers = ["Bölüm", "Ölçülen Kazanım", "Sınıf Ort.", "Max Puan", "Başarı (%)"]
+            for c_i, bh in enumerate(b_headers, start=1):
+                hc = ws.cell(row=curr_row, column=c_i, value=bh)
+                hc.font = font_th
+                hc.fill = fill_navy
+                hc.alignment = Alignment(horizontal="center" if c_i != 2 else "left", vertical="center")
+                hc.border = border_cell
+
+        curr_row += 1
+        for b_i, b in enumerate(beceri_listesi):
+            ws.row_dimensions[curr_row].height = 22
+            b_fill = fill_zebra if (b_i % 2 == 1) else fill_white
+            yuzde = float(b.get('yuzde', 0))
+            if yuzde >= 75:
+                y_fill, y_font = fill_green, font_green
+            elif yuzde >= 50:
+                y_fill, y_font = fill_yellow, font_yellow
+            else:
+                y_fill, y_font = fill_red, font_red
+
+            if use_wide_merge:
+                ws.merge_cells(start_row=curr_row, start_column=2, end_row=curr_row, end_column=4)
+                c1 = ws.cell(row=curr_row, column=1, value=b.get('isim', ''))
+                c2 = ws.cell(row=curr_row, column=2, value=b.get('kazanim', ''))
+                c5 = ws.cell(row=curr_row, column=5, value=round(float(b.get('ort', 0)), 2))
+                c6 = ws.cell(row=curr_row, column=6, value=b.get('max', 0))
+                c7 = ws.cell(row=curr_row, column=7, value=f"%{yuzde:.1f}")
+                for c_i in range(1, 8):
+                    cc = ws.cell(row=curr_row, column=c_i)
+                    cc.fill = b_fill
+                    cc.border = border_cell
+                    cc.font = font_td
+                c1.font = font_td_bold
+                c1.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+                c2.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+                c5.alignment = Alignment(horizontal="center", vertical="center")
+                c6.alignment = Alignment(horizontal="center", vertical="center")
+                c7.alignment = Alignment(horizontal="center", vertical="center")
+                c7.fill = y_fill
+                c7.font = y_font
+            else:
+                vals = [b.get('isim', ''), b.get('kazanim', ''), round(float(b.get('ort', 0)), 2), b.get('max', 0), f"%{yuzde:.1f}"]
+                for c_i, v in enumerate(vals, start=1):
+                    cc = ws.cell(row=curr_row, column=c_i, value=v)
+                    cc.fill = y_fill if c_i == 5 else b_fill
+                    cc.font = y_font if c_i == 5 else (font_td_bold if c_i == 1 else font_td)
+                    cc.border = border_cell
+                    cc.alignment = Alignment(horizontal="left" if c_i in [1, 2] else "center", vertical="center", wrap_text=True)
+            curr_row += 1
+
+    # 5. ALT BİLGİ (FOOTER)
+    curr_row += 1
+    ws.merge_cells(f"A{curr_row}:{last_col_letter}{curr_row}")
+    c_ft = ws[f"A{curr_row}"]
+    c_ft.value = "SoFL | Testing and Evaluation Office — KTO Karatay University"
+    c_ft.font = font_footer
+    c_ft.alignment = Alignment(horizontal="left", vertical="center")
+
+    # 6. SÜTUN GENİŞLİKLERİ VE YATAY TEK SAYFA BASKI AYARI
+    col_widths = {1: 18, 2: 26, 3: 11, 4: 13, 5: 13}
+    for c_i in range(1, num_cols + 1):
+        ws.column_dimensions[get_column_letter(c_i)].width = col_widths.get(c_i, 14)
+
+    ws.page_setup.orientation = ws.ORIENTATION_LANDSCAPE
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return buffer
 
 def karne_satirlari_hazirla(tos_df, df_aktif, ogr_row, tolerans=6):
     isaretler = [
@@ -1057,34 +1319,10 @@ else:
                         
                         c_btn1, c_btn2 = st.columns(2)
                         with c_btn1:
-                            if st.button("📊 Sınıf Raporunu Excel Olarak İndir (Tavsiye Edilen)", type="primary"):
-                                buffer = io.BytesIO()
-                                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                                    df_excel_liste = df_s[cols_to_show].copy()
-                                    df_excel_liste["Sınava Girdi"] = df_excel_liste["Sınava Girdi"].map({True: "Katıldı", False: "Girmedi"})
-                                    df_excel_liste = df_excel_liste.rename(columns={"Ogrenci_No": "Öğrenci No", "Ad_Soyad": "Ad Soyad", "Sınav Notu": "Toplam Not"})
-                                    df_excel_liste.to_excel(writer, sheet_name="Öğrenci Notları", index=False)
-                                    
-                                    kpi_df = pd.DataFrame({
-                                        "Metrik": ["Sınıf Ortalaması", "Medyan", "En Yüksek Not", "En Düşük Not", "Aktif Öğrenci Sayısı"], 
-                                        "Değer": [
-                                            f"{df_aktif['Sınav Notu'].mean():.2f}" if not df_aktif.empty else "0", 
-                                            f"{df_aktif['Sınav Notu'].median():.2f}" if not df_aktif.empty else "0", 
-                                            f"{df_aktif['Sınav Notu'].max():.2f}" if not df_aktif.empty else "0", 
-                                            f"{df_aktif['Sınav Notu'].min():.2f}" if not df_aktif.empty else "0", 
-                                            str(len(df_aktif))
-                                        ]
-                                    })
-                                    kpi_df.to_excel(writer, sheet_name="İstatistikler", index=False)
-                                    
-                                    beceri_df = pd.DataFrame(beceri_listesi_pdf)
-                                    if not beceri_df.empty:
-                                        beceri_df = beceri_df.rename(columns={"isim": "Bölüm", "kazanim": "Kazanım", "ort": "Sınıf Ortalaması", "max": "Max Puan", "yuzde": "Başarı Yüzdesi (%)"})
-                                        beceri_df.to_excel(writer, sheet_name="Beceri Analizi", index=False)
-                                        
-                                buffer.seek(0)
-                                st.success("Sınıf raporu Excel olarak hazırlandı! Hiçbir veri kaybı olmadan tüm geniş sütunları inceleyebilirsiniz.")
-                                st.download_button("📥 Excel Raporunu İndir", data=buffer, file_name=f"{sec_sube}_Sinif_Raporu.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                            if st.button("📊 Sınıf Raporunu Excel Olarak İndir (Tek Sayfa - Kurumsal)", type="primary"):
+                                buffer = create_corporate_class_excel(sec_sinav, sec_sube, df_s, df_aktif, cols_to_show, beceri_listesi_pdf)
+                                st.success("Kurumsal tek sayfalık Excel sınıf raporu hazırlandı!")
+                                st.download_button("📥 Excel Raporunu İndir", data=buffer, file_name=f"{sec_sube}_{sec_sinav}_Sinif_Raporu.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                         
                         with c_btn2:
                             if st.button("📦 Tüm Sınıfın Karnelerini Oluştur (Ayrı PDF - ZIP)"):
